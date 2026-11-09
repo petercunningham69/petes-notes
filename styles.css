@@ -388,3 +388,12 @@ ol.setp li{margin-bottom:6px}
 :root{--pane-editor:rgba(255,255,255,.72);--pane-list:rgba(255,255,255,.52);--blob1:#9db6ff;--blob2:#ffc49f;--blob3:#d3bcff;--blob4:#a6e3cf}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--pane-editor:rgba(17,18,22,.76);--pane-list:rgba(18,19,24,.52);--blob1:#2b4c9e;--blob2:#73391c;--blob3:#4a3088;--blob4:#16615a}}
 :root[data-theme="dark"]{--pane-editor:rgba(17,18,22,.76);--pane-list:rgba(18,19,24,.52);--blob1:#2b4c9e;--blob2:#73391c;--blob3:#4a3088;--blob4:#16615a}
+
+/* one continuous background: the panes share the same light tint and no longer
+   re-colour what's behind them, so the moving light flows across all three */
+:root{--pane-side:rgba(255,255,255,.42);--pane-list:rgba(255,255,255,.6);--pane-editor:rgba(255,255,255,.6)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--pane-side:rgba(28,29,36,.42);--pane-list:rgba(16,17,22,.62);--pane-editor:rgba(16,17,22,.62)}}
+:root[data-theme="dark"]{--pane-side:rgba(28,29,36,.42);--pane-list:rgba(16,17,22,.62);--pane-editor:rgba(16,17,22,.62)}
+.side{-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+.list,.editor{-webkit-backdrop-filter:none;backdrop-filter:none}
+@media (max-width:720px){.editor{background:var(--surface-solid)}}
