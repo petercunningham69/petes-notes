@@ -427,3 +427,5 @@ ol.setp li{margin-bottom:6px}
 ::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);background-clip:padding-box}
 ::-webkit-scrollbar-button{display:none;height:0;width:0}
 @media (pointer:fine) and (min-width:721px){ .list .bar,.editor .bar{padding-right:22px} }
+/* the background is now drawn on a small canvas scaled to fill the window */
+.ambient canvas{position:absolute;inset:0;width:100%;height:100%;display:block}

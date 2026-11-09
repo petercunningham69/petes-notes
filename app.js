@@ -298,16 +298,70 @@ function track(e, el, axis, h) {
 const THEMES = ['light', 'dark', 'system'];
 let theme = store.get('petesnotes-theme', 'system');
 const root = document.documentElement;
+let ambient = null;
 function applyTheme() {
   if (theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', theme);
   const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.querySelectorAll('meta[name=theme-color]').forEach(m => { m.content = dark ? '#06070b' : '#eceef5'; m.removeAttribute('media'); });
+  if (ambient) ambient.recolour();
 }
 applyTheme();
 // null = follow the device's Reduce Motion setting; true/false = Peter's own choice
 let movingPref = store.get('petesnotes-moving2', null);
 const movingOn = () => movingPref === null ? !matchMedia('(prefers-reduced-motion: reduce)').matches : movingPref;
-function applyMoving() { root.classList.toggle('still', !movingOn()); root.classList.toggle('force-move', movingPref === true); }
+function applyMoving() { root.classList.toggle('still', !movingOn()); root.classList.toggle('force-move', movingPref === true); ambient.update(); }
+
+/* Living background, drawn on a tiny canvas that the browser scales up.
+   The glows are soft, so a low-resolution canvas looks the same, and because they
+   drift slowly it only redraws about 12 times a second. It pauses when the window
+   is in the background or not focused, and stops completely when switched off. */
+ambient = (() => {
+  const cv = document.getElementById('ambientCanvas'), ctx = cv.getContext('2d');
+  const BLOBS = [
+    { v: '--blob1', cx: .04, cy: .02, r: .5, ax: .3, ay: .38, T: 48, p: 0 },
+    { v: '--blob2', cx: .96, cy: 1.02, r: .44, ax: -.34, ay: -.36, T: 62, p: 1.7 },
+    { v: '--blob3', cx: .92, cy: .02, r: .38, ax: -.46, ay: .28, T: 54, p: 3.1 },
+    { v: '--blob4', cx: .2, cy: .96, r: .36, ax: .58, ay: -.2, T: 72, p: .6, fade: true }
+  ];
+  let colours = [], raf = 0, last = 0;
+  const t0 = performance.now() - 9000;
+  const hex = h => { h = h.trim().replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  function readColours() { const cs = getComputedStyle(root); colours = BLOBS.map(b => hex(cs.getPropertyValue(b.v) || '#808080')); }
+  function size() { const W = 240, H = Math.max(60, Math.round(W * innerHeight / Math.max(1, innerWidth))); if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; } }
+  function draw(now) {
+    const W = cv.width, H = cv.height, M = Math.max(W, H), t = (now - t0) / 1000;
+    ctx.clearRect(0, 0, W, H);
+    BLOBS.forEach((b, i) => {
+      const ph = 2 * Math.PI * t / b.T + b.p;
+      const k = .5 - .5 * Math.cos(ph), k2 = .5 - .5 * Math.cos(ph * .83 + .9);
+      const x = (b.cx + b.ax * k) * W, y = (b.cy + b.ay * k2) * H;
+      const R = b.r * M * (1 + .14 * Math.sin(ph * .7));
+      const a = b.fade ? .15 + .85 * k : 1;
+      const [r, g, bl] = colours[i] || [128, 128, 128];
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, R);
+      grad.addColorStop(0, `rgba(${r},${g},${bl},${a})`);
+      grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+    });
+  }
+  const running = () => movingOn() && !document.hidden && document.hasFocus();
+  function loop(now) {
+    raf = 0;
+    if (!running()) return;
+    if (now - last >= 80) { last = now; draw(now); }
+    raf = requestAnimationFrame(loop);
+  }
+  function update() {
+    if (!colours.length) readColours();
+    size();
+    if (running()) { if (!raf) raf = requestAnimationFrame(loop); }
+    else { cancelAnimationFrame(raf); raf = 0; draw(performance.now()); }
+  }
+  addEventListener('resize', () => { size(); draw(performance.now()); });
+  addEventListener('focus', update); addEventListener('blur', update);
+  document.addEventListener('visibilitychange', update);
+  return { update, recolour() { readColours(); draw(performance.now()); } };
+})();
 applyMoving();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
