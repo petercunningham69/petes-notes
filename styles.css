@@ -381,3 +381,5 @@ ol.setp li{margin-bottom:6px}
 :root.still .ambient i{animation-play-state:paused}
 @media (prefers-reduced-motion:reduce){.ambient i{animation:none!important}.ambient .b4{opacity:.35}}
 .sidefoot .toggle{margin:10px 2px 0;font-size:13.5px}
+/* keep the top-right buttons clear of the scrollbar on mouse-driven devices */
+@media (pointer:fine) and (min-width:721px){ .list .bar,.editor .bar{padding-right:28px} }
