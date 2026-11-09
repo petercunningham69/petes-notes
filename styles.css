@@ -414,3 +414,16 @@ ol.setp li{margin-bottom:6px}
   .side{margin:0;border-radius:0;border:0;border-right:1px solid var(--line);box-shadow:none}
   .side .scroll{padding-top:30px}
 }
+
+/* slim see-through scrollbars, so no grey strip divides the panels */
+:root{--scroll-thumb:rgba(60,60,67,.22);--scroll-thumb-hover:rgba(60,60,67,.42)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--scroll-thumb:rgba(235,235,245,.16);--scroll-thumb-hover:rgba(235,235,245,.34)}}
+:root[data-theme="dark"]{--scroll-thumb:rgba(235,235,245,.16);--scroll-thumb-hover:rgba(235,235,245,.34)}
+*{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
+*:hover{scrollbar-color:var(--scroll-thumb-hover) transparent}
+::-webkit-scrollbar{width:10px;height:10px;background:transparent}
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);background-clip:padding-box}
+::-webkit-scrollbar-button{display:none;height:0;width:0}
+@media (pointer:fine) and (min-width:721px){ .list .bar,.editor .bar{padding-right:22px} }
