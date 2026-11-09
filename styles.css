@@ -308,3 +308,5 @@ input,textarea{font:inherit;color:inherit}
 .body input[type=checkbox]{width:17px;height:17px;vertical-align:-3px;margin-right:6px;accent-color:var(--accent)}
 .lockedbadge{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}
 .lockedbadge svg{width:12px;height:12px}
+.filepick svg{width:26px;height:26px;flex:none}
+.filepick span{min-width:0;overflow-wrap:anywhere}
