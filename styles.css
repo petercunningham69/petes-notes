@@ -397,3 +397,20 @@ ol.setp li{margin-bottom:6px}
 .side{-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
 .list,.editor{-webkit-backdrop-filter:none;backdrop-filter:none}
 @media (max-width:720px){.editor{background:var(--surface-solid)}}
+/* the sidebar uses exactly the same tint as the other panes on desktop */
+@media (min-width:1081px){
+  :root{--pane-side:var(--pane-list)}
+  .side{-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:inset 0 1px 0 var(--glass-shine)}
+}
+/* as a slide-out drawer on iPad it sits over the list, so it keeps its frosted glass */
+@media (max-width:1080px){
+  :root{--pane-side:rgba(255,255,255,.72)}
+  :root[data-theme="dark"]{--pane-side:rgba(24,25,31,.78)}
+}
+@media (max-width:1080px) and (prefers-color-scheme:dark){:root:not([data-theme="light"]){--pane-side:rgba(24,25,31,.78)}}
+/* desktop: the sidebar sits flush like the other panes, divided only by a hairline,
+   so no strip of untinted background frames it */
+@media (min-width:1081px){
+  .side{margin:0;border-radius:0;border:0;border-right:1px solid var(--line);box-shadow:none}
+  .side .scroll{padding-top:30px}
+}
