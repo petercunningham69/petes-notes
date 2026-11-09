@@ -370,16 +370,21 @@ ol.setp li{margin-bottom:6px}
 :root[data-theme="dark"]{--blob4:#124a43}
 .ambient{background:var(--bg);overflow:hidden}
 .ambient i{position:absolute;border-radius:50%;will-change:transform,opacity;animation-direction:alternate;animation-iteration-count:infinite;animation-timing-function:ease-in-out}
-.ambient .b1{width:95vmax;height:95vmax;left:-38vmax;top:-42vmax;background:radial-gradient(closest-side,var(--blob1),transparent);animation-name:drift1;animation-duration:47s}
-.ambient .b2{width:85vmax;height:85vmax;right:-30vmax;bottom:-46vmax;background:radial-gradient(closest-side,var(--blob2),transparent);animation-name:drift2;animation-duration:61s}
-.ambient .b3{width:75vmax;height:75vmax;right:-30vmax;top:-38vmax;background:radial-gradient(closest-side,var(--blob3),transparent);animation-name:drift3;animation-duration:53s}
-.ambient .b4{width:70vmax;height:70vmax;left:-10vmax;bottom:-45vmax;background:radial-gradient(closest-side,var(--blob4),transparent);opacity:0;animation-name:glow4;animation-duration:73s}
-@keyframes drift1{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(14vw,10vh,0) scale(1.14)}100%{transform:translate3d(5vw,24vh,0) scale(.94)}}
-@keyframes drift2{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-18vw,-8vh,0) scale(1.1)}100%{transform:translate3d(-6vw,-20vh,0) scale(1.18)}}
-@keyframes drift3{0%{transform:translate3d(0,0,0) scale(1.05)}50%{transform:translate3d(-12vw,16vh,0) scale(.9)}100%{transform:translate3d(-24vw,4vh,0) scale(1.1)}}
-@keyframes glow4{0%{opacity:0;transform:translate3d(0,0,0) scale(.9)}50%{opacity:.85;transform:translate3d(18vw,-10vh,0) scale(1.1)}100%{opacity:.2;transform:translate3d(34vw,-4vh,0) scale(1)}}
+.ambient .b1{width:95vmax;height:95vmax;left:-38vmax;top:-42vmax;background:radial-gradient(closest-side,var(--blob1),transparent);animation-name:drift1;animation-duration:24s}
+.ambient .b2{width:85vmax;height:85vmax;right:-30vmax;bottom:-46vmax;background:radial-gradient(closest-side,var(--blob2),transparent);animation-name:drift2;animation-duration:31s}
+.ambient .b3{width:75vmax;height:75vmax;right:-30vmax;top:-38vmax;background:radial-gradient(closest-side,var(--blob3),transparent);animation-name:drift3;animation-duration:27s}
+.ambient .b4{width:70vmax;height:70vmax;left:-10vmax;bottom:-45vmax;background:radial-gradient(closest-side,var(--blob4),transparent);opacity:0;animation-name:glow4;animation-duration:36s}
+@keyframes drift1{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(30vw,18vh,0) scale(1.2)}100%{transform:translate3d(10vw,42vh,0) scale(.9)}}
+@keyframes drift2{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-34vw,-14vh,0) scale(1.15)}100%{transform:translate3d(-12vw,-38vh,0) scale(1.25)}}
+@keyframes drift3{0%{transform:translate3d(0,0,0) scale(1.05)}50%{transform:translate3d(-26vw,30vh,0) scale(.88)}100%{transform:translate3d(-48vw,8vh,0) scale(1.15)}}
+@keyframes glow4{0%{opacity:0;transform:translate3d(0,0,0) scale(.9)}50%{opacity:1;transform:translate3d(30vw,-20vh,0) scale(1.15)}100%{opacity:.25;transform:translate3d(60vw,-8vh,0) scale(1)}}
 :root.still .ambient i{animation-play-state:paused}
-@media (prefers-reduced-motion:reduce){.ambient i{animation:none!important}.ambient .b4{opacity:.35}}
+@media (prefers-reduced-motion:reduce){:root:not(.force-move) .ambient i{animation:none!important}:root:not(.force-move) .ambient .b4{opacity:.35}}
 .sidefoot .toggle{margin:10px 2px 0;font-size:13.5px}
 /* keep the top-right buttons clear of the scrollbar on mouse-driven devices */
 @media (pointer:fine) and (min-width:721px){ .list .bar,.editor .bar{padding-right:28px} }
+
+/* let more of the moving light show through the panes */
+:root{--pane-editor:rgba(255,255,255,.72);--pane-list:rgba(255,255,255,.52);--blob1:#9db6ff;--blob2:#ffc49f;--blob3:#d3bcff;--blob4:#a6e3cf}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--pane-editor:rgba(17,18,22,.76);--pane-list:rgba(18,19,24,.52);--blob1:#2b4c9e;--blob2:#73391c;--blob3:#4a3088;--blob4:#16615a}}
+:root[data-theme="dark"]{--pane-editor:rgba(17,18,22,.76);--pane-list:rgba(18,19,24,.52);--blob1:#2b4c9e;--blob2:#73391c;--blob3:#4a3088;--blob4:#16615a}

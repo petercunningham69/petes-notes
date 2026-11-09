@@ -304,8 +304,11 @@ function applyTheme() {
   document.querySelectorAll('meta[name=theme-color]').forEach(m => { m.content = dark ? '#06070b' : '#eceef5'; m.removeAttribute('media'); });
 }
 applyTheme();
-let moving = store.get('petesnotes-moving', true);
-root.classList.toggle('still', !moving);
+// null = follow the device's Reduce Motion setting; true/false = Peter's own choice
+let movingPref = store.get('petesnotes-moving2', null);
+const movingOn = () => movingPref === null ? !matchMedia('(prefers-reduced-motion: reduce)').matches : movingPref;
+function applyMoving() { root.classList.toggle('still', !movingOn()); root.classList.toggle('force-move', movingPref === true); }
+applyMoving();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
 /* ================= view state ================= */
@@ -350,7 +353,7 @@ function buildSide() {
       <h3>Appearance</h3>
       <div class="seg" role="radiogroup" aria-label="Theme"><span class="thumb" id="thumb"></span>
         ${THEMES.map(m => `<button role="radio" data-theme-set="${m}" aria-checked="${theme === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
-      <label class="toggle"><input type="checkbox" id="movingBg" ${moving ? 'checked' : ''}><span></span>Moving background</label>
+      <label class="toggle"><input type="checkbox" id="movingBg" ${movingOn() ? 'checked' : ''}><span></span>Moving background</label>
       <div id="syncwrap">${syncHTML()}</div>
       <div class="row2"><button class="glass press" id="importBtn">Import</button><button class="glass press" id="exportBtn">Export</button><button class="glass press" id="clipBtn">Clipper</button><button class="glass press" id="signOutBtn">Sign out</button></div>
     </div>`;
@@ -1019,7 +1022,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('mousedown', e => { if (e.target.closest('.toolbar')) e.preventDefault(); });
 $('filein').addEventListener('change', e => { const fs = [...e.target.files]; if (fs.length) attachFiles(fs); });
-document.addEventListener('change', e => { if (e.target.id === 'movingBg') { moving = e.target.checked; store.set('petesnotes-moving', moving); root.classList.toggle('still', !moving); } });
+document.addEventListener('change', e => { if (e.target.id === 'movingBg') { movingPref = e.target.checked; store.set('petesnotes-moving2', movingPref); applyMoving(); } });
 $('scanin').addEventListener('change', e => { const f = e.target.files[0]; if (f) scanDocument(f); });
 
 /* ================= editing ================= */
