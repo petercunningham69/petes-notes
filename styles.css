@@ -355,3 +355,10 @@ ol.setp li{margin-bottom:6px}
   .toolbar svg{width:20px;height:20px}
   .toolbar .sep{margin:8px 2px}
 }
+.sidefoot .row2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+@media print{
+  body.printing .side,body.printing .list,body.printing .bar,body.printing .toolbar,body.printing .ambient,body.printing .props{display:none!important}
+  body.printing,body.printing .app,body.printing .editor,body.printing .scroll{display:block!important;height:auto!important;overflow:visible!important;background:#fff!important;color:#000!important;transform:none!important;padding:0!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  body.printing .doc{max-width:none;padding:0}
+  body.printing .body{color:#000}
+}

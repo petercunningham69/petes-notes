@@ -349,7 +349,7 @@ function buildSide() {
       <div class="seg" role="radiogroup" aria-label="Theme"><span class="thumb" id="thumb"></span>
         ${THEMES.map(m => `<button role="radio" data-theme-set="${m}" aria-checked="${theme === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
       <div id="syncwrap">${syncHTML()}</div>
-      <div class="row2"><button class="glass press" id="importBtn">Import</button><button class="glass press" id="clipBtn">Clipper</button><button class="glass press" id="signOutBtn">Sign out</button></div>
+      <div class="row2"><button class="glass press" id="importBtn">Import</button><button class="glass press" id="exportBtn">Export</button><button class="glass press" id="clipBtn">Clipper</button><button class="glass press" id="signOutBtn">Sign out</button></div>
     </div>`;
   thumbS = new Spring(THEMES.indexOf(theme), i => $('thumb').style.transform = `translateX(${i * 100}%)`, 1);
   pillS = new Spring(0, y => { const p = $('pill'); if (p) p.style.transform = `translate3d(0,${y}px,0)`; }, 100);
@@ -812,7 +812,7 @@ const refreshListSoon = () => { clearTimeout(listTimer); listTimer = setTimeout(
 
 /* ================= import ================= */
 function openImport() {
-  const c = card(`<h1>Import notes</h1><p class="sub">Choose the import file I prepared from your Joplin notes (petes-notes-import.zip). Notes keep their original dates and land in their new notebooks.</p>
+  const c = card(`<h1>Import notes</h1><p class="sub">Choose an import or export file from Pete’s Notes (a .zip). Notes keep their original dates and notebooks, and anything already here is skipped.</p>
     <label class="filepick" id="pick">${I.file}<span id="pickt">Choose or drop the .zip file</span><input type="file" accept=".zip,application/zip" id="impfile" hidden></label>
     <div id="impbody"></div>`);
   const pick = c.el.querySelector('#pick'), inp = c.el.querySelector('#impfile');
@@ -873,9 +873,9 @@ async function runImport(zip, m, progress) {
   const upAtts = m.attachments.filter(a => a.notes.length && !attBySrc.has(a.source_id));
   const total = fresh.length + upAtts.length; let done = 0;
   for (const n of fresh) {
-    const body = n.body.replace(/data-att="([0-9a-f]{32})"/g, (s, k) => attId[k] ? `data-att="${attId[k]}"` : s);
+    const body = n.body.replace(/data-att="([0-9a-f-]{32,36})"/g, (s, k) => attId[k] ? `data-att="${attId[k]}"` : s);
     const nbId = keyToId[n.notebook] || null;
-    const rec = { id: uuid(), notebook_id: nbId, title: n.title, body, cipher: null, job: '', tags: [], pinned: false, source_url: n.source_url || '', source_id: n.source_id, created_at: new Date(n.created).toISOString(), updated_at: new Date(n.updated).toISOString(), deleted_at: null };
+    const rec = { id: uuid(), notebook_id: nbId, title: n.title, body, cipher: null, job: n.job || '', tags: n.tags || [], pinned: !!n.pinned, source_url: n.source_url || '', source_id: n.source_id, created_at: new Date(n.created).toISOString(), updated_at: new Date(n.updated).toISOString(), deleted_at: null };
     if (nbLocked(nbId)) { rec._plain = { title: rec.title, body: rec.body }; rec.cipher = await enc(vaultKey, rec._plain); rec.title = ''; rec.body = ''; }
     DB.notes.set(rec.id, rec); noteBySrc.set(rec.source_id, rec); rec._dirty = 1; rec._v = 1; persist('notes', rec);
     if (++done % 25 === 0) progress(done / total, `Adding notes… ${done} of ${fresh.length}`);
@@ -964,6 +964,7 @@ document.addEventListener('click', async e => {
   const tg = t.closest('[data-tag]'); if (tg) return setFilter(ui.filter, ui.tag === tg.dataset.tag ? null : tg.dataset.tag);
   if (t.closest('#newNb')) return newNotebook();
   if (t.closest('#importBtn') || t.closest('#emptyImport')) { if (ui.drawer) closeDrawer(); return openImport(); }
+  if (t.closest('#exportBtn')) { if (ui.drawer) closeDrawer(); return exportAll(); }
   if (t.closest('#clipBtn')) { if (ui.drawer) closeDrawer(); return clipperSetup(); }
   if (t.closest('#askBtn')) return askNotes();
   if (t.closest('#signOutBtn')) return menu(t.closest('#signOutBtn'), 'Sign out of Pete’s Notes on this device? Your notes stay safe in your account.', [{ label: 'Sign out', danger: true, run: signOut }]);
@@ -996,6 +997,8 @@ document.addEventListener('click', async e => {
     return menu(t.closest('#moreBtn'), null, [
       { label: 'Move to notebook…', run: () => notebookChoices(n, $('moreBtn')) },
       ...(isLocked(n) ? [] : [{ label: 'Summarise with AI', run: () => summariseNote(n) }]),
+      { label: 'Export as Markdown', run: () => exportNoteMarkdown(n) },
+      { label: 'Print or save as PDF', run: () => { document.body.classList.add('printing'); setTimeout(() => { window.print(); document.body.classList.remove('printing'); }, 50); } },
       { label: 'Duplicate note', run: async () => { const c = { ...n, id: uuid(), pinned: false, source_id: null, created_at: nowISO(), updated_at: nowISO(), _dirty: 0 }; delete c.modified_at; if (isLocked(n)) { c._plain = { title: nTitle(n) + ' copy', body: nBody(n) }; c.cipher = await enc(vaultKey, c._plain); } else c.title = (n.title || 'New Note') + ' copy'; DB.notes.set(c.id, c); markDirty('notes', c); open(c.id); renderSide(); toast('Duplicated'); } },
       { label: 'Make this notebook the default for new notes', run: () => { store.set('petesnotes-defaultnb', n.notebook_id); toast('New notes go to ' + book(n.notebook_id).name); } },
       { label: 'Delete note', danger: true, run: () => trashNote(n.id) }
@@ -1313,4 +1316,98 @@ async function handleIncomingClip() {
     n.body = link + DOMPurify.sanitize(page.html, PURIFY);
   } catch (err) { n.body = link + `<p><em>Saved the link only: ${esc(err.message || err)}</em></p>`; }
   edited(n); if (ui.current === n.id) renderEditor(true); renderList(); toast('Page clipped');
+}
+
+
+/* ================= export ================= */
+let turndown = null;
+async function getTurndown() {
+  if (turndown) return turndown;
+  await loadScript('vendor/turndown.js'); await loadScript('vendor/turndown-plugin-gfm.js');
+  turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced', emDelimiter: '*' });
+  turndown.use(turndownPluginGfm.gfm);
+  turndown.addRule('checklist', { filter: n => n.nodeName === 'LI' && n.parentNode && n.parentNode.classList && n.parentNode.classList.contains('check'), replacement: (c, n) => `- [${n.classList.contains('done') ? 'x' : ' '}] ${c.trim().replace(/\n+/g, ' ')}\n` });
+  turndown.addRule('ocr', { filter: n => n.nodeName === 'DETAILS', replacement: c => '\n' + c.trim().split('\n').map(l => '> ' + l).join('\n') + '\n' });
+  turndown.addRule('attImg', { filter: n => n.nodeName === 'IMG' && n.getAttribute('data-att'), replacement: (c, n) => `![${n.getAttribute('data-name') || ''}](${n.getAttribute('data-path') || ''})` });
+  turndown.addRule('attLink', { filter: n => n.nodeName === 'A' && n.getAttribute('data-att'), replacement: (c, n) => `[${n.getAttribute('data-name') || c}](${n.getAttribute('data-path') || ''})` });
+  return turndown;
+}
+const fileSafe = s => (String(s || 'Untitled').replace(/[\\/:*?"<>|#\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90) || 'Untitled');
+function nbPath(id) { const parts = []; let b = DB.notebooks.get(id); let guard = 0; while (b && guard++ < 10) { parts.unshift(fileSafe(b.name)); b = DB.notebooks.get(b.parent_id); } return parts.length ? parts.join('/') : 'No notebook'; }
+async function noteMarkdown(n, attPrefix) {
+  const td = await getTurndown();
+  const div = document.createElement('div'); div.innerHTML = DOMPurify.sanitize(nBody(n), PURIFY);
+  div.querySelectorAll('[data-att]').forEach(el => { const a = DB.atts.get(el.dataset.att); el.setAttribute('data-name', a ? a.filename : 'attachment'); el.setAttribute('data-path', a ? encodeURI(attPrefix + a.id.slice(0, 8) + '-' + fileSafe(a.filename)) : ''); });
+  const front = ['---', `title: ${JSON.stringify(nTitle(n) || 'Untitled')}`, `notebook: ${JSON.stringify(book(n.notebook_id).name)}`, `created: ${n.created_at}`, `updated: ${n.updated_at}`];
+  if ((n.tags || []).length) front.push(`tags: [${n.tags.map(t => JSON.stringify(t)).join(', ')}]`);
+  if (n.job) front.push(`job: "${n.job}"`);
+  if (n.source_url) front.push(`source: ${JSON.stringify(n.source_url)}`);
+  front.push('---', '');
+  return front.join('\n') + `# ${nTitle(n) || 'Untitled'}\n\n` + td.turndown(div.innerHTML) + '\n';
+}
+function download(blob, name) {
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60e3);
+}
+async function exportNoteMarkdown(n) {
+  try { const md = await noteMarkdown(n, ''); download(new Blob([md], { type: 'text/markdown' }), fileSafe(nTitle(n)) + '.md'); toast('Exported'); }
+  catch (err) { toast(err.message || 'Export failed'); }
+}
+function exportAll() {
+  const lockedCount = [...DB.notes.values()].filter(n => visibleNote(n) && isLocked(n)).length;
+  const total = [...DB.notes.values()].filter(visibleNote).length;
+  const c = card(`<h1>Export notes</h1><p class="sub">Download everything as a .zip: a folder per notebook, each note as a Markdown file, plus your attachments. The same file can be imported back into Pete’s Notes.</p>
+    <div class="stats"><div class="stat"><b>${total - lockedCount}</b><span>notes</span></div><div class="stat"><b>${[...DB.notebooks.values()].filter(b => !b.deleted_at).length}</b><span>notebooks</span></div><div class="stat"><b>${[...DB.atts.values()].filter(a => !a.deleted_at).length}</b><span>attachments</span></div></div>
+    <label class="toggle"><input type="checkbox" id="exatt" checked><span></span>Include attachments</label>
+    ${lockedCount ? `<label class="toggle" ${vaultKey ? '' : 'style="opacity:.5"'}><input type="checkbox" id="exlock" ${vaultKey ? '' : 'disabled'}><span></span>Include the ${lockedCount} locked notes</label>
+      <div class="warn">${vaultKey ? 'Locked notes are saved <b>unencrypted</b> in the export, so keep that file somewhere safe.' : 'Unlock the locked notebook first if you want to include its notes.'}</div>` : ''}
+    <button class="primary press" id="exgo">Export</button>
+    <div class="bar2" hidden id="exbar"><i></i></div><div class="msgline" id="exmsg"></div>`);
+  c.el.querySelector('#exgo').onclick = async e => {
+    const btn = e.target, msg = c.el.querySelector('#exmsg'), bar = c.el.querySelector('#exbar');
+    const withAtt = c.el.querySelector('#exatt').checked, withLocked = !!(c.el.querySelector('#exlock') || {}).checked && !!vaultKey;
+    btn.disabled = true; bar.hidden = false; msg.className = 'msgline';
+    try {
+      await runExport({ withAtt, withLocked }, (p, t) => { bar.firstChild.style.width = (p * 100).toFixed(1) + '%'; msg.textContent = t; });
+      msg.textContent = 'Done. Check your downloads.'; btn.disabled = false; btn.textContent = 'Close'; btn.onclick = () => c.close();
+    } catch (err) { console.error(err); msg.className = 'msgline err'; msg.textContent = 'Export stopped: ' + (err.message || err); btn.disabled = false; }
+  };
+}
+async function runExport({ withAtt, withLocked }, progress) {
+  const zip = new JSZip();
+  const notes = [...DB.notes.values()].filter(n => visibleNote(n) && (!isLocked(n) || (withLocked && n._plain)));
+  const books = [...DB.notebooks.values()].filter(b => !b.deleted_at && (withLocked || !b.locked));
+  const keepBook = new Set(books.map(b => b.id));
+  const atts = withAtt ? [...DB.atts.values()].filter(a => !a.deleted_at && notes.some(n => n.id === a.note_id)) : [];
+  const total = notes.length + atts.length; let done = 0;
+  const used = new Set();
+  const manifest = { version: 1, source: "Pete's Notes", exported: nowISO(),
+    notebooks: books.map(b => ({ key: b.id, name: b.name, parent: b.parent_id && keepBook.has(b.parent_id) ? b.parent_id : null, color: b.color, locked: !!b.locked, position: b.position || 0 })),
+    notes: [], attachments: [] };
+  for (const n of notes) {
+    const dir = nbPath(n.notebook_id), depth = dir.split('/').length;
+    let name = fileSafe(nTitle(n)), path = `${dir}/${name}.md`, k = 2;
+    while (used.has(path.toLowerCase())) path = `${dir}/${name} (${k++}).md`;
+    used.add(path.toLowerCase());
+    zip.file(path, await noteMarkdown(n, '../'.repeat(depth) + '_attachments/'), { date: new Date(n.updated_at) });
+    manifest.notes.push({ source_id: n.source_id || 'pn:' + n.id, notebook: keepBook.has(n.notebook_id) ? n.notebook_id : null, title: nTitle(n), body: nBody(n), created: Date.parse(n.created_at), updated: Date.parse(n.updated_at), source_url: n.source_url || '', tags: n.tags || [], job: n.job || '', pinned: !!n.pinned });
+    if (++done % 20 === 0) { progress(done / total, `Writing notes… ${done} of ${notes.length}`); await new Promise(r => setTimeout(r)); }
+  }
+  const srcOf = new Map(notes.map(n => [n.id, n.source_id || 'pn:' + n.id]));
+  for (const a of atts) {
+    const file = `_attachments/${a.id.slice(0, 8)}-${fileSafe(a.filename)}`;
+    try {
+      const url = await attURL(a); const blob = await (await fetch(url)).blob();
+      zip.file(file, blob);
+      manifest.attachments.push({ source_id: a.source_id || 'pn:' + a.id, key: a.id, filename: a.filename, mime: a.mime, file, notes: [srcOf.get(a.note_id)] });
+    } catch (_) { /* not available offline or locked: skip */ }
+    progress(++done / total, `Adding attachments… ${done - notes.length} of ${atts.length}`);
+  }
+  zip.file('manifest.json', JSON.stringify(manifest));
+  zip.file('README.txt', `Pete's Notes export, ${new Date().toLocaleString('en-IE')}\n\nEach notebook is a folder and each note is a Markdown (.md) file with its dates at the top.\nAttachments are in _attachments. To restore, use Import in Pete's Notes and choose this .zip.\n`);
+  progress(.99, 'Packing the zip…');
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 } });
+  download(blob, `petes-notes-export-${new Date().toISOString().slice(0, 10)}.zip`);
+  progress(1, 'Done');
 }
