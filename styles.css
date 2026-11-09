@@ -45,7 +45,7 @@ svg{display:block}
 .press{transition:transform .5s cubic-bezier(.25,1.6,.5,1),background-color .2s}
 .press:active{transform:scale(.9);transition-duration:.08s}
 
-.app{position:relative;z-index:1;height:100%;display:grid;grid-template-columns:282px 340px minmax(0,1fr);overflow:hidden}
+.app{position:relative;z-index:1;height:100%;display:grid;grid-template-columns:310px 400px minmax(0,1fr);overflow:hidden}
 .pane{min-width:0;min-height:0;position:relative;display:flex;flex-direction:column}
 .side{margin:10px 0 10px 10px;border-radius:26px;background:var(--pane-side);-webkit-backdrop-filter:blur(40px) saturate(170%);backdrop-filter:blur(40px) saturate(170%);
   border:1px solid var(--glass-edge);box-shadow:inset 0 1px 0 var(--glass-shine),var(--shadow-sm);overflow:hidden}
@@ -362,3 +362,4 @@ ol.setp li{margin-bottom:6px}
   body.printing .doc{max-width:none;padding:0}
   body.printing .body{color:#000}
 }
+@media (min-width:1600px){ .app{grid-template-columns:330px 430px minmax(0,1fr)} }
