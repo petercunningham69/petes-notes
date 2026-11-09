@@ -304,6 +304,8 @@ function applyTheme() {
   document.querySelectorAll('meta[name=theme-color]').forEach(m => { m.content = dark ? '#06070b' : '#eceef5'; m.removeAttribute('media'); });
 }
 applyTheme();
+let moving = store.get('petesnotes-moving', true);
+root.classList.toggle('still', !moving);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
 /* ================= view state ================= */
@@ -348,6 +350,7 @@ function buildSide() {
       <h3>Appearance</h3>
       <div class="seg" role="radiogroup" aria-label="Theme"><span class="thumb" id="thumb"></span>
         ${THEMES.map(m => `<button role="radio" data-theme-set="${m}" aria-checked="${theme === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
+      <label class="toggle"><input type="checkbox" id="movingBg" ${moving ? 'checked' : ''}><span></span>Moving background</label>
       <div id="syncwrap">${syncHTML()}</div>
       <div class="row2"><button class="glass press" id="importBtn">Import</button><button class="glass press" id="exportBtn">Export</button><button class="glass press" id="clipBtn">Clipper</button><button class="glass press" id="signOutBtn">Sign out</button></div>
     </div>`;
@@ -1016,6 +1019,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('mousedown', e => { if (e.target.closest('.toolbar')) e.preventDefault(); });
 $('filein').addEventListener('change', e => { const fs = [...e.target.files]; if (fs.length) attachFiles(fs); });
+document.addEventListener('change', e => { if (e.target.id === 'movingBg') { moving = e.target.checked; store.set('petesnotes-moving', moving); root.classList.toggle('still', !moving); } });
 $('scanin').addEventListener('change', e => { const f = e.target.files[0]; if (f) scanDocument(f); });
 
 /* ================= editing ================= */

@@ -363,3 +363,21 @@ ol.setp li{margin-bottom:6px}
   body.printing .body{color:#000}
 }
 @media (min-width:1600px){ .app{grid-template-columns:330px 430px minmax(0,1fr)} }
+
+/* ---------- living background: slow-drifting light ---------- */
+:root{--blob4:#b4e6d6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--blob4:#124a43}}
+:root[data-theme="dark"]{--blob4:#124a43}
+.ambient{background:var(--bg);overflow:hidden}
+.ambient i{position:absolute;border-radius:50%;will-change:transform,opacity;animation-direction:alternate;animation-iteration-count:infinite;animation-timing-function:ease-in-out}
+.ambient .b1{width:95vmax;height:95vmax;left:-38vmax;top:-42vmax;background:radial-gradient(closest-side,var(--blob1),transparent);animation-name:drift1;animation-duration:47s}
+.ambient .b2{width:85vmax;height:85vmax;right:-30vmax;bottom:-46vmax;background:radial-gradient(closest-side,var(--blob2),transparent);animation-name:drift2;animation-duration:61s}
+.ambient .b3{width:75vmax;height:75vmax;right:-30vmax;top:-38vmax;background:radial-gradient(closest-side,var(--blob3),transparent);animation-name:drift3;animation-duration:53s}
+.ambient .b4{width:70vmax;height:70vmax;left:-10vmax;bottom:-45vmax;background:radial-gradient(closest-side,var(--blob4),transparent);opacity:0;animation-name:glow4;animation-duration:73s}
+@keyframes drift1{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(14vw,10vh,0) scale(1.14)}100%{transform:translate3d(5vw,24vh,0) scale(.94)}}
+@keyframes drift2{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-18vw,-8vh,0) scale(1.1)}100%{transform:translate3d(-6vw,-20vh,0) scale(1.18)}}
+@keyframes drift3{0%{transform:translate3d(0,0,0) scale(1.05)}50%{transform:translate3d(-12vw,16vh,0) scale(.9)}100%{transform:translate3d(-24vw,4vh,0) scale(1.1)}}
+@keyframes glow4{0%{opacity:0;transform:translate3d(0,0,0) scale(.9)}50%{opacity:.85;transform:translate3d(18vw,-10vh,0) scale(1.1)}100%{opacity:.2;transform:translate3d(34vw,-4vh,0) scale(1)}}
+:root.still .ambient i{animation-play-state:paused}
+@media (prefers-reduced-motion:reduce){.ambient i{animation:none!important}.ambient .b4{opacity:.35}}
+.sidefoot .toggle{margin:10px 2px 0;font-size:13.5px}
