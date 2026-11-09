@@ -201,7 +201,7 @@ svg{display:block}
   .side{position:absolute;top:10px;bottom:10px;left:calc(10px + env(safe-area-inset-left,0px));margin:0;width:min(290px,calc(100% - 64px));z-index:30;box-shadow:inset 0 1px 0 var(--glass-shine),var(--shadow);visibility:hidden}
   .app::after{content:"";position:absolute;inset:0;background:var(--scrim);opacity:var(--drawer,0);pointer-events:none;z-index:29}
   .app.drawer-live::after{pointer-events:auto}
-  .showside{display:inline-flex!important}
+  .bar .showside{display:inline-flex!important}
   .list{border-right:1px solid var(--line)}
 }
 /* phone: push/pop stack */
@@ -339,3 +339,19 @@ ol.setp li{margin-bottom:6px}
 .body details.ocr p{margin:.5em 0 0}
 .body blockquote.aisum{border-left-color:#8a5cd6;background:var(--press);border-radius:0 12px 12px 0;padding:8px 14px;color:var(--fg)}
 .body blockquote.aisum ul{margin:.2em 0 .4em}
+.sidelabel{display:none}
+@media (max-width:720px){
+  #openSide{padding:0 13px 0 9px}
+  .sidelabel{display:inline;font-size:16px;font-weight:500}
+  .listtools{gap:5px}
+  .listtools .gbtn{min-width:40px;height:40px;padding:0 9px}
+}
+.ic-side,.ic-back{display:contents}
+.ic-back{display:none}
+@media (max-width:720px){ .ic-side{display:none} .ic-back{display:contents} }
+@media (max-width:720px){
+  .toolbar{gap:0;padding:4px;max-width:calc(100% - 16px)}
+  .toolbar button{min-width:34px;padding:0 4px;height:38px}
+  .toolbar svg{width:20px;height:20px}
+  .toolbar .sep{margin:8px 2px}
+}

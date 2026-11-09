@@ -391,7 +391,7 @@ const ACTW = 156;
 function buildList() {
   list.innerHTML = `
     <div class="bar"><div class="edge"></div>
-      <button class="gbtn glass press showside" id="openSide" aria-label="Show notebooks">${I.side}</button>
+      <button class="gbtn glass press showside" id="openSide" aria-label="Show notebooks"><span class="ic-side">${I.side}</span><span class="ic-back">${I.back}</span><span class="sidelabel">Notebooks</span></button>
       <div class="inline" id="linline"></div><span></span>
       <div class="listtools"><button class="gbtn glass press" id="askBtn" aria-label="Ask your notes">${I.spark}</button><button class="gbtn glass press" id="sortBtn" aria-label="Sort and options">${I.more}</button>
       <button class="gbtn glass tint press" id="newNote" aria-label="New note">${I.compose}</button></div>
