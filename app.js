@@ -27,6 +27,9 @@ const I = {
   chev: sv('<path d="M9 5l7 7-7 7"/>', 'stroke-width="2.4"'),
   sort: sv('<path d="M7 4v16M3.5 16.5L7 20l3.5-3.5M14 6h7M14 11h5M14 16h3"/>'),
   file: sv('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
+  camera: sv('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.5" r="3.6"/>'),
+  spark: sv('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>'),
+  globe: sv('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.6 5.4 3.6 8.5s-1.1 5.9-3.6 8.5c-2.5-2.6-3.6-5.4-3.6-8.5s1.1-5.9 3.6-8.5z"/>'),
   close: sv('<path d="M6 6l12 12M18 6L6 18"/>', 'stroke-width="2.1"'),
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18" cy="12" r="1.7"/></svg>'
 };
@@ -346,7 +349,7 @@ function buildSide() {
       <div class="seg" role="radiogroup" aria-label="Theme"><span class="thumb" id="thumb"></span>
         ${THEMES.map(m => `<button role="radio" data-theme-set="${m}" aria-checked="${theme === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
       <div id="syncwrap">${syncHTML()}</div>
-      <div class="row2"><button class="glass press" id="importBtn">Import notes</button><button class="glass press" id="signOutBtn">Sign out</button></div>
+      <div class="row2"><button class="glass press" id="importBtn">Import</button><button class="glass press" id="clipBtn">Clipper</button><button class="glass press" id="signOutBtn">Sign out</button></div>
     </div>`;
   thumbS = new Spring(THEMES.indexOf(theme), i => $('thumb').style.transform = `translateX(${i * 100}%)`, 1);
   pillS = new Spring(0, y => { const p = $('pill'); if (p) p.style.transform = `translate3d(0,${y}px,0)`; }, 100);
@@ -390,7 +393,7 @@ function buildList() {
     <div class="bar"><div class="edge"></div>
       <button class="gbtn glass press showside" id="openSide" aria-label="Show notebooks">${I.side}</button>
       <div class="inline" id="linline"></div><span></span>
-      <div class="listtools"><button class="gbtn glass press" id="sortBtn" aria-label="Sort and options">${I.more}</button>
+      <div class="listtools"><button class="gbtn glass press" id="askBtn" aria-label="Ask your notes">${I.spark}</button><button class="gbtn glass press" id="sortBtn" aria-label="Sort and options">${I.more}</button>
       <button class="gbtn glass tint press" id="newNote" aria-label="New note">${I.compose}</button></div>
     </div>
     <div class="scroll" id="lscroll">
@@ -519,6 +522,7 @@ function renderEditor(quiet) {
       <button data-cmd="quote" title="Quote">${I.quote}</button>
       <button data-cmd="table" title="Table">${I.table}</button>
       <button data-cmd="date" title="Insert today's date">${I.cal}</button>
+      <button data-cmd="scan" title="Scan a document">${I.camera}</button>
       <button data-cmd="attach" title="Attach a photo or file">${I.clip}</button>
     </div>`}`;
   resolveAtts($('body'));
@@ -565,7 +569,7 @@ function resolveAtts(container) {
     } catch (_) { if (el.tagName === 'IMG') el.alt = 'Image not available offline'; }
   });
 }
-async function attachFiles(files) {
+async function attachFiles(files, { quiet = false, after = '' } = {}) {
   const n = DB.notes.get(ui.current); if (!n) return;
   for (const f of files) {
     const a = { id: uuid(), note_id: n.id, filename: f.name || 'photo.jpg', mime: f.type || 'application/octet-stream', size: f.size, path: '', source_id: null, created_at: nowISO(), deleted_at: null };
@@ -574,11 +578,11 @@ async function attachFiles(files) {
     if (isLocked(n) || nbLocked(n.notebook_id)) { if (!vaultKey) return toast('Unlock the locked notebook first'); data = await encBlob(f); a.path += '.enc'; }
     await idb.put('blobs', a.id, data);
     a._pendingUpload = 1; DB.atts.set(a.id, a); persist('atts', a);
-    insertHTML(/^image\//.test(a.mime) ? `<img data-att="${a.id}"><p><br></p>` : `<a data-att="${a.id}" href="#">${esc(a.filename)}</a>&nbsp;`);
+    insertHTML(/^image\//.test(a.mime) ? `<img data-att="${a.id}">${after}<p><br></p>` : `<a data-att="${a.id}" href="#">${esc(a.filename)}</a>&nbsp;`);
   }
   resolveAtts($('body'));
   saveFromEditor(); scheduleSync(300);
-  toast(files.length > 1 ? files.length + ' files attached' : 'Attached');
+  if (!quiet) toast(files.length > 1 ? files.length + ' files attached' : 'Attached');
 }
 
 /* ---------- saving ---------- */
@@ -960,6 +964,8 @@ document.addEventListener('click', async e => {
   const tg = t.closest('[data-tag]'); if (tg) return setFilter(ui.filter, ui.tag === tg.dataset.tag ? null : tg.dataset.tag);
   if (t.closest('#newNb')) return newNotebook();
   if (t.closest('#importBtn') || t.closest('#emptyImport')) { if (ui.drawer) closeDrawer(); return openImport(); }
+  if (t.closest('#clipBtn')) { if (ui.drawer) closeDrawer(); return clipperSetup(); }
+  if (t.closest('#askBtn')) return askNotes();
   if (t.closest('#signOutBtn')) return menu(t.closest('#signOutBtn'), 'Sign out of Pete’s Notes on this device? Your notes stay safe in your account.', [{ label: 'Sign out', danger: true, run: signOut }]);
   if (t.closest('#moreRows')) { ui.limit += 300; return renderList(); }
   const act = t.closest('[data-act]');
@@ -989,6 +995,7 @@ document.addEventListener('click', async e => {
     if (n.deleted_at) return menu(t.closest('#moreBtn'), null, [{ label: 'Restore note', run: () => restoreNote(n.id) }, { label: 'Delete permanently', danger: true, run: () => deleteForever(n.id) }]);
     return menu(t.closest('#moreBtn'), null, [
       { label: 'Move to notebook…', run: () => notebookChoices(n, $('moreBtn')) },
+      ...(isLocked(n) ? [] : [{ label: 'Summarise with AI', run: () => summariseNote(n) }]),
       { label: 'Duplicate note', run: async () => { const c = { ...n, id: uuid(), pinned: false, source_id: null, created_at: nowISO(), updated_at: nowISO(), _dirty: 0 }; delete c.modified_at; if (isLocked(n)) { c._plain = { title: nTitle(n) + ' copy', body: nBody(n) }; c.cipher = await enc(vaultKey, c._plain); } else c.title = (n.title || 'New Note') + ' copy'; DB.notes.set(c.id, c); markDirty('notes', c); open(c.id); renderSide(); toast('Duplicated'); } },
       { label: 'Make this notebook the default for new notes', run: () => { store.set('petesnotes-defaultnb', n.notebook_id); toast('New notes go to ' + book(n.notebook_id).name); } },
       { label: 'Delete note', danger: true, run: () => trashNote(n.id) }
@@ -1002,10 +1009,11 @@ document.addEventListener('click', async e => {
     saveFromEditor(); return;
   }
   const btn = t.closest('[data-cmd]');
-  if (btn) { e.preventDefault(); if (btn.dataset.cmd === 'attach') { $('filein').value = ''; $('filein').click(); return; } command(btn.dataset.cmd); saveFromEditor(); }
+  if (btn) { e.preventDefault(); if (btn.dataset.cmd === 'attach') { $('filein').value = ''; $('filein').click(); return; } if (btn.dataset.cmd === 'scan') { $('scanin').value = ''; $('scanin').click(); return; } command(btn.dataset.cmd); saveFromEditor(); }
 });
 document.addEventListener('mousedown', e => { if (e.target.closest('.toolbar')) e.preventDefault(); });
 $('filein').addEventListener('change', e => { const fs = [...e.target.files]; if (fs.length) attachFiles(fs); });
+$('scanin').addEventListener('change', e => { const f = e.target.files[0]; if (f) scanDocument(f); });
 
 /* ================= editing ================= */
 let savedRange = null;
@@ -1127,6 +1135,7 @@ async function start(user) {
   renderSide(); renderList({ enter: true }); renderEditor(); applyNav(0); applyDrawer(0);
   await sync();
   if (!ui.current && !narrow()) { const first = visible()[0]; if (first) { ui.current = first.id; renderEditor(); renderList(); } }
+  handleIncomingClip();
 }
 async function signOut() {
   await flushPersist();
@@ -1147,3 +1156,161 @@ addEventListener('pagehide', () => { flushPersist(); });
     if (session && !uid) start(session.user);
   });
 })();
+
+
+/* ================= helper function (web clips + AI) ================= */
+async function assistant(body) {
+  const { data, error } = await sb.functions.invoke('assistant', { body });
+  if (error) {
+    let msg = error.message || String(error);
+    try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (_) {}
+    if (/Failed to send|not found|404/i.test(msg)) msg = 'The helper isn’t set up in Supabase yet';
+    throw new Error(msg);
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
+/* ---------- document scanning with searchable text ---------- */
+function loadScript(src) { return new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load the text reader. Are you online?')); document.head.appendChild(s); }); }
+function drawScan(img, clean) {
+  const max = 2200, k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+  const x = c.getContext('2d'); x.drawImage(img, 0, 0, c.width, c.height);
+  if (clean) {
+    const d = x.getImageData(0, 0, c.width, c.height), p = d.data;
+    let lo = 255, hi = 0;
+    for (let i = 0; i < p.length; i += 16) { const g = .299 * p[i] + .587 * p[i + 1] + .114 * p[i + 2]; if (g < lo) lo = g; if (g > hi) hi = g; }
+    const span = Math.max(40, hi - lo);
+    for (let i = 0; i < p.length; i += 4) { let g = (.299 * p[i] + .587 * p[i + 1] + .114 * p[i + 2] - lo) / span; g = Math.min(1, Math.max(0, (g - .12) * 1.35)); g = Math.pow(g, .8) * 255; p[i] = p[i + 1] = p[i + 2] = g; }
+    x.putImageData(d, 0, 0);
+  }
+  return c;
+}
+async function scanDocument(file) {
+  const n = DB.notes.get(ui.current); if (!n) return;
+  const img = new Image(); img.src = URL.createObjectURL(file);
+  try { await img.decode(); } catch (_) { toast('That photo couldn’t be opened'); return; }
+  let clean = true, canvas = drawScan(img, clean), busy = false;
+  const c = card(`<h1 style="font-size:24px">Scan document</h1><p class="sub">The text in the scan is added to your note so you can search for it.</p>
+    <div class="scanprev" id="scanprev"></div>
+    <label class="toggle"><input type="checkbox" id="scanclean" checked><span></span>Clean up for documents (black &amp; white)</label>
+    <button class="primary press" id="scango">Add to note</button>
+    <div class="bar2" hidden id="scanbar"><i></i></div><div class="msgline" id="scanmsg"></div>`, { onClose: () => URL.revokeObjectURL(img.src) });
+  const show = () => { const p = c.el.querySelector('#scanprev'); p.innerHTML = ''; canvas.style.width = '100%'; p.appendChild(canvas); };
+  show();
+  c.el.querySelector('#scanclean').onchange = e => { clean = e.target.checked; canvas = drawScan(img, clean); show(); };
+  c.el.querySelector('#scango').onclick = async e => {
+    if (busy) return; busy = true; e.target.disabled = true;
+    const msg = c.el.querySelector('#scanmsg'), bar = c.el.querySelector('#scanbar'); bar.hidden = false;
+    let textOut = '';
+    try {
+      msg.textContent = 'Loading the text reader…';
+      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+      const worker = await Tesseract.createWorker('eng', 1, { logger: m => { if (m.status === 'recognizing text') { bar.firstChild.style.width = (m.progress * 100).toFixed(0) + '%'; msg.textContent = 'Reading the text… ' + Math.round(m.progress * 100) + '%'; } } });
+      const { data } = await worker.recognize(canvas); await worker.terminate();
+      textOut = (data.text || '').trim();
+    } catch (err) { msg.className = 'msgline err'; msg.textContent = (err.message || err) + ' The image will be added without searchable text.'; await new Promise(r => setTimeout(r, 1600)); }
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', .85));
+    const name = 'Scan ' + new Date().toLocaleDateString('en-IE').replace(/\//g, '-') + '.jpg';
+    const ocr = textOut ? `<details class="ocr"><summary>Text in this scan</summary>${textOut.split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('')}</details>` : '';
+    c.close();
+    await attachFiles([new File([blob], name, { type: 'image/jpeg' })], { quiet: true, after: ocr });
+    toast(textOut ? 'Scan added with searchable text' : 'Scan added');
+  };
+}
+
+/* ---------- ask your notes ---------- */
+const STOP = new Set('the and for with that this what when where which who how was were are have has had you your our from about into there their them then than does did can could would should will just also any all not but out get got its it’s i’m my me find show tell give list notes note'.split(' '));
+function relevantNotes(question, limit = 14) {
+  const terms = [...new Set(question.toLowerCase().match(/[a-z0-9&@.\-]{3,}/g) || [])].filter(t => !STOP.has(t));
+  const pool = [...DB.notes.values()].filter(n => visibleNote(n) && !isLocked(n));
+  const scored = pool.map(n => {
+    const title = (n.title || '').toLowerCase(), body = plain(n).toLowerCase(), meta = ((n.tags || []).join(' ') + ' ' + (n.job || '') + ' ' + book(n.notebook_id).name).toLowerCase();
+    let s = 0;
+    for (const t of terms) { if (title.includes(t)) s += 6; if (meta.includes(t)) s += 3; let i = -1, k = 0; while ((i = body.indexOf(t, i + 1)) !== -1 && k < 8) k++; s += k; }
+    return { n, s };
+  }).filter(x => x.s > 0).sort((a, b) => b.s - a.s || b.n.updated_at.localeCompare(a.n.updated_at)).slice(0, limit).map(x => x.n);
+  return scored.length ? scored : pool.sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 8);
+}
+function askNotes() {
+  const c = card(`<h1 style="font-size:24px;display:flex;align-items:center;gap:8px;justify-content:center"><span style="width:26px;height:26px;color:var(--accent);display:inline-block">${I.spark}</span>Ask your notes</h1>
+    <p class="sub">Ask anything about what you’ve written. Locked notes are never sent.</p>
+    <form id="askform"><label class="field"><input id="askq" placeholder="e.g. What did Keith want changed on the website?" autocomplete="off"></label>
+    <button class="primary press" type="submit">Ask</button></form>
+    <div id="answer" class="answer" hidden></div>`);
+  c.el.style.maxWidth = '560px';
+  const q = c.el.querySelector('#askq'); setTimeout(() => q.focus(), 80);
+  c.el.querySelector('#askform').onsubmit = async e => {
+    e.preventDefault();
+    const question = q.value.trim(); if (!question) return;
+    const out = c.el.querySelector('#answer'), btn = e.target.querySelector('button');
+    const notes = relevantNotes(question);
+    out.hidden = false; out.innerHTML = `<div class="msgline">Reading ${notes.length} notes…</div>`; btn.disabled = true;
+    try {
+      const payload = notes.map(n => ({ title: n.title || 'Untitled', notebook: book(n.notebook_id).name, date: n.updated_at.slice(0, 10), text: plain(n).slice(0, 2500) }));
+      const { answer } = await assistant({ action: 'ask', question, notes: payload });
+      const cited = new Set();
+      const html = esc(answer).replace(/\[(\d+)\]/g, (m, d) => { const n = notes[+d - 1]; if (!n) return m; cited.add(n); return `<button class="cite press" data-open="${n.id}">${d}</button>`; })
+        .split(/\n{2,}/).map(p => `<p>${p.replace(/\n- /g, '<br>• ').replace(/^- /, '• ').replace(/\n/g, '<br>')}</p>`).join('');
+      out.innerHTML = html + (cited.size ? `<div class="sources"><span>From your notes</span>${[...cited].map((n, i) => `<button class="srcnote press" data-open="${n.id}">${esc(n.title || 'Untitled')}</button>`).join('')}</div>` : '');
+      out.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { c.close(); const id = b.dataset.open; const nn = DB.notes.get(id); if (nn && DB.notebooks.has(nn.notebook_id) && ui.filter !== 'all') setFilter('all', null); open(id); });
+    } catch (err) { out.innerHTML = `<div class="msgline err">${esc(err.message || err)}</div>`; }
+    btn.disabled = false;
+  };
+}
+async function summariseNote(n) {
+  toast('Summarising…');
+  try {
+    const { summary } = await assistant({ action: 'summarise', title: n.title, text: plain(n) });
+    const items = summary.split('\n').map(l => l.trim()).filter(Boolean);
+    let html = '<blockquote class="aisum"><p><strong>Summary</strong></p><ul>', inTodo = false;
+    for (const l of items) {
+      if (/^to ?do:?$/i.test(l)) { html += '</ul><p><strong>To do</strong></p><ul class="check">'; inTodo = true; continue; }
+      html += `<li>${esc(l.replace(/^[-•*]\s*/, ''))}</li>`;
+    }
+    html += '</ul></blockquote>';
+    if (ui.current !== n.id) open(n.id);
+    const b = $('body'); b.insertAdjacentHTML('afterbegin', html);
+    saveFromEditor(); toast('Summary added to the top');
+  } catch (err) { toast(err.message || 'Summary failed'); }
+}
+
+/* ---------- web clipper ---------- */
+const CLIP_BOOKMARKLET = `javascript:(()=>{window.open('${location.origin}/?clip='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)+'&text='+encodeURIComponent(String(getSelection()).slice(0,3000)),'_blank')})()`;
+function clipperSetup() {
+  card(`<h1 style="font-size:24px">Web clipper</h1><p class="sub">Save any web page into a Web Clips notebook, with its text and pictures.</p>
+    <h3 class="sethead">On your PC or laptop</h3>
+    <p class="setp">Drag this button onto your browser’s bookmarks bar. On any page, click it to clip the page, or select some text first to clip just that.</p>
+    <p style="text-align:center;margin:10px 0 18px"><a class="bookmarklet" href="${esc(CLIP_BOOKMARKLET)}" onclick="event.preventDefault();toast('Drag me to your bookmarks bar')">${I.globe.replace('<svg', '<svg width="16" height="16"')} Clip to Pete’s Notes</a></p>
+    <h3 class="sethead">On your iPhone or iPad</h3>
+    <ol class="setp">
+      <li>Open the <b>Shortcuts</b> app, tap <b>+</b> and name it <b>Clip to Pete’s Notes</b>.</li>
+      <li>Tap the <b>ⓘ</b> button and turn on <b>Show in Share Sheet</b>.</li>
+      <li>Add the action <b>URL Encode</b> and set it to encode the <b>Shortcut Input</b>.</li>
+      <li>Add <b>Open URLs</b> with the text <code>${esc(location.origin)}/?clip=</code> followed by the <b>URL Encoded Text</b> variable.</li>
+      <li>In Safari, tap <b>Share → Clip to Pete’s Notes</b>. The first time, sign in to Pete’s Notes in Safari too.</li>
+    </ol>`).el.style.maxWidth = '520px';
+}
+async function handleIncomingClip() {
+  const qs = new URLSearchParams(location.search);
+  let url = qs.get('clip') || qs.get('url') || '';
+  const text = qs.get('text') || '';
+  if (!url) { const m = text.match(/https?:\/\/\S+/); if (m) url = m[0]; }
+  if (!url && !text) return;
+  history.replaceState(null, '', location.pathname);
+  let nb = [...DB.notebooks.values()].find(b => !b.deleted_at && b.name === 'Web Clips' && !b.parent_id);
+  if (!nb) { nb = { id: uuid(), parent_id: null, name: 'Web Clips', color: '#0f8fa8', sort_by: 'edited', locked: false, position: childrenOf(null).length, created_at: nowISO(), deleted_at: null }; DB.notebooks.set(nb.id, nb); markDirty('notebooks', nb); }
+  const sel = text && !/^https?:\/\/\S+$/.test(text.trim()) ? `<blockquote>${esc(text).replace(/\n/g, '<br>')}</blockquote>` : '';
+  const link = url ? `<p><a href="${esc(url)}">${esc(url)}</a></p>` : '';
+  const n = { id: uuid(), notebook_id: nb.id, title: qs.get('title') || url || 'Clipped text', body: link + sel + (url && !sel ? '<p><em>Fetching the page…</em></p>' : ''), cipher: null, job: '', tags: [], pinned: false, source_url: url, source_id: null, created_at: nowISO(), updated_at: nowISO(), deleted_at: null };
+  DB.notes.set(n.id, n); markDirty('notes', n);
+  ui.filter = nb.id; ui.tag = null; renderSide(); renderList({ enter: true }); open(n.id);
+  if (!url || sel) { toast('Clipped'); return; }
+  try {
+    const page = await assistant({ action: 'clip', url });
+    n.title = n.title && n.title !== url ? n.title : page.title;
+    n.body = link + DOMPurify.sanitize(page.html, PURIFY);
+  } catch (err) { n.body = link + `<p><em>Saved the link only: ${esc(err.message || err)}</em></p>`; }
+  edited(n); if (ui.current === n.id) renderEditor(true); renderList(); toast('Page clipped');
+}
