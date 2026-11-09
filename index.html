@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en-IE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pete's Notes</title>
+<meta name="theme-color" content="#eceef5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#06070b" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Pete's Notes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+<div class="ambient" aria-hidden="true"></div>
+<div class="app" id="app" hidden>
+  <aside class="pane side" id="side" aria-label="Notebooks"></aside>
+  <section class="pane list" id="list" aria-label="Notes"></section>
+  <main class="pane editor" id="editor"></main>
+</div>
+<div class="center" id="gate" hidden></div>
+<input type="file" id="filein" multiple hidden>
+<script src="vendor/supabase.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
