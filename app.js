@@ -698,10 +698,16 @@ function goBack(velocity) {
   ui.pane = 'list'; if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   navS.to(0, { damping: 1, response: .4, velocity });
 }
+// New notes made outside a specific notebook go to "General", created the first time it's needed
+function generalNotebook() {
+  let g = [...DB.notebooks.values()].find(b => !b.deleted_at && !b.parent_id && b.name === 'General');
+  if (!g) { g = { id: uuid(), parent_id: null, name: 'General', color: '#7a7f8c', sort_by: 'edited', locked: false, position: -1, created_at: nowISO(), deleted_at: null }; DB.notebooks.set(g.id, g); markDirty('notebooks', g); }
+  return g;
+}
 function newNote() {
   if (ui.filter === 'trash') setFilter('all', null);
   let nb = DB.notebooks.has(ui.filter) ? ui.filter : (store.get('petesnotes-defaultnb', null));
-  if (!DB.notebooks.has(nb) || DB.notebooks.get(nb).deleted_at) nb = (childrenOf(null).find(b => !b.locked) || {}).id || null;
+  if (!DB.notebooks.has(nb) || DB.notebooks.get(nb).deleted_at) nb = generalNotebook().id;
   if (nbLocked(nb) && !vaultKey) { toast('Unlock the locked notebook first'); return; }
   const n = { id: uuid(), notebook_id: nb, title: '', body: '', cipher: null, job: '', tags: ui.tag ? [ui.tag] : [], pinned: false, source_url: '', source_id: null, created_at: nowISO(), updated_at: nowISO(), deleted_at: null };
   if (nbLocked(nb)) n._plain = { title: '', body: '' };
