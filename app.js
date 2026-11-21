@@ -27,6 +27,7 @@ const I = {
   chev: sv('<path d="M9 5l7 7-7 7"/>', 'stroke-width="2.4"'),
   sort: sv('<path d="M7 4v16M3.5 16.5L7 20l3.5-3.5M14 6h7M14 11h5M14 16h3"/>'),
   file: sv('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
+  mic: sv('<rect x="9" y="3" width="6" height="11.5" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>'),
   camera: sv('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.5" r="3.6"/>'),
   spark: sv('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>'),
   globe: sv('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.6 5.4 3.6 8.5s-1.1 5.9-3.6 8.5c-2.5-2.6-3.6-5.4-3.6-8.5s1.1-5.9 3.6-8.5z"/>'),
@@ -552,7 +553,7 @@ function propsHTML(n) {
     ${(n.tags || []).map(t => `<button class="prop tag press" data-rmtag="${esc(t)}" title="Remove tag">#${esc(t)} ×</button>`).join('')}
     <label class="prop tag">+ <input id="addtag" placeholder="add tag"></label>`;
 }
-const PURIFY = { ADD_ATTR: ['data-att', 'target'], FORBID_TAGS: ['style', 'form', 'iframe', 'object', 'embed'], FORBID_ATTR: ['style'] };
+const PURIFY = { ADD_TAGS: ['audio'], ADD_ATTR: ['data-att', 'target', 'controls', 'preload', 'contenteditable'], FORBID_TAGS: ['style', 'form', 'iframe', 'object', 'embed'], FORBID_ATTR: ['style'] };
 function renderEditor(quiet) {
   const n = DB.notes.get(ui.current);
   if (!n || (isLocked(n) && !n._plain)) { editor.innerHTML = `<div class="blank"><div><b>No note selected</b>Pick a note from the list, or start a new one.</div></div>`; return; }
@@ -582,6 +583,7 @@ function renderEditor(quiet) {
       <button data-cmd="quote" title="Quote">${I.quote}</button>
       <button data-cmd="table" title="Table">${I.table}</button>
       <button data-cmd="date" title="Insert today's date">${I.cal}</button>
+      <button data-cmd="voice" title="Record a voice note">${I.mic}</button>
       <button data-cmd="scan" title="Scan a document">${I.camera}</button>
       <button data-cmd="attach" title="Attach a photo or file">${I.clip}</button>
     </div>`}`;
@@ -598,7 +600,7 @@ function renderEditor(quiet) {
 function serializeBody() {
   const b = $('body'); if (!b) return '';
   const c = b.cloneNode(true);
-  c.querySelectorAll('img[data-att]').forEach(i => i.removeAttribute('src'));
+  c.querySelectorAll('img[data-att],audio[data-att]').forEach(i => i.removeAttribute('src'));
   c.querySelectorAll('a[data-att]').forEach(a => { a.setAttribute('href', '#'); a.removeAttribute('target'); a.removeAttribute('download'); });
   return c.innerHTML;
 }
@@ -625,24 +627,31 @@ function resolveAtts(container) {
     try {
       const url = await attURL(a);
       if (el.tagName === 'IMG') { el.src = url; el.alt = a.filename; }
+      else if (el.tagName === 'AUDIO') { el.src = url; el.controls = true; }
       else { el.href = url; el.target = '_blank'; el.setAttribute('download', a.filename); }
     } catch (_) { if (el.tagName === 'IMG') el.alt = 'Image not available offline'; }
   });
 }
-async function attachFiles(files, { quiet = false, after = '' } = {}) {
-  const n = DB.notes.get(ui.current); if (!n) return;
+async function attachFiles(files, { quiet = false, after = '', label = '' } = {}) {
+  const n = DB.notes.get(ui.current); if (!n) return [];
+  const ids = [];
   for (const f of files) {
     const a = { id: uuid(), note_id: n.id, filename: f.name || 'photo.jpg', mime: f.type || 'application/octet-stream', size: f.size, path: '', source_id: null, created_at: nowISO(), deleted_at: null };
     a.path = `${uid}/${a.id}/${safeName(a.filename)}`;
     let data = f;
-    if (isLocked(n) || nbLocked(n.notebook_id)) { if (!vaultKey) return toast('Unlock the locked notebook first'); data = await encBlob(f); a.path += '.enc'; }
+    if (isLocked(n) || nbLocked(n.notebook_id)) { if (!vaultKey) { toast('Unlock the locked notebook first'); return ids; } data = await encBlob(f); a.path += '.enc'; }
     await idb.put('blobs', a.id, data);
     a._pendingUpload = 1; DB.atts.set(a.id, a); persist('atts', a);
-    insertHTML(/^image\//.test(a.mime) ? `<img data-att="${a.id}">${after}<p><br></p>` : `<a data-att="${a.id}" href="#">${esc(a.filename)}</a>&nbsp;`);
+    const extra = typeof after === 'function' ? after(a.id) : after;
+    ids.push(a.id);
+    insertHTML(/^image\//.test(a.mime) ? `<img data-att="${a.id}">${extra}<p><br></p>`
+      : /^audio\//.test(a.mime) ? `<div class="voice" contenteditable="false"><audio data-att="${a.id}" controls preload="metadata"></audio><span class="vmeta">${esc(label || a.filename)}</span></div>${extra}<p><br></p>`
+      : `<a data-att="${a.id}" href="#">${esc(a.filename)}</a>&nbsp;`);
   }
   resolveAtts($('body'));
   saveFromEditor(); scheduleSync(300);
   if (!quiet) toast(files.length > 1 ? files.length + ' files attached' : 'Attached');
+  return ids;
 }
 
 /* ---------- saving ---------- */
@@ -765,18 +774,18 @@ function popover(anchor, title, actions) {
   el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const a = actions[+b.dataset.i]; close(0, () => a.run()); });
   return close;
 }
-function card(html, { onClose } = {}) {
+function card(html, { onClose, sticky = false } = {}) {
   const scrim = document.createElement('div'); scrim.className = 'scrim';
   const wrap = document.createElement('div'); wrap.className = 'center'; wrap.style.zIndex = 45;
-  wrap.innerHTML = `<div class="card" role="dialog" aria-modal="true"><button class="closex press" data-close aria-label="Close">${I.close}</button>${html}</div>`;
+  wrap.innerHTML = `<div class="card" role="dialog" aria-modal="true">${sticky ? '' : `<button class="closex press" data-close aria-label="Close">${I.close}</button>`}${html}</div>`;
   document.body.append(scrim, wrap);
   const el = wrap.firstChild;
   const s = new Spring(0, p => { el.style.opacity = clamp01(p * 1.4); el.style.transform = `translate3d(0,${(1 - p) * 30}px,0) scale(${.94 + .06 * p})`; scrim.style.setProperty('--o', clamp01(p)); }, 1);
   s.to(1, { damping: .86, response: .42 });
   let closed = false;
-  const close = () => { if (closed) return; closed = true; layers.splice(layers.indexOf(close), 1); s.to(0, { damping: 1, response: .28, done() { scrim.remove(); wrap.remove(); onClose && onClose(); } }); };
-  layers.push(close);
-  wrap.addEventListener('click', e => { if (e.target === wrap || e.target.closest('[data-close]')) close(); });
+  const close = () => { if (closed) return; closed = true; const i = layers.indexOf(close); if (i >= 0) layers.splice(i, 1); s.to(0, { damping: 1, response: .28, done() { scrim.remove(); wrap.remove(); onClose && onClose(); } }); };
+  if (!sticky) layers.push(close);
+  wrap.addEventListener('click', e => { if ((e.target === wrap && !sticky) || e.target.closest('[data-close]')) close(); });
   return { el, close };
 }
 function ask(title, { value = '', placeholder = '', button = 'Save' } = {}) {
@@ -1057,6 +1066,7 @@ document.addEventListener('click', async e => {
     return menu(t.closest('#moreBtn'), null, [
       { label: 'Move to notebook…', run: () => notebookChoices(n, $('moreBtn')) },
       ...(isLocked(n) ? [] : [{ label: 'Summarise with AI', run: () => summariseNote(n) }]),
+      ...(/<audio[^>]*data-att=/.test(nBody(n)) ? [{ label: 'Transcribe recordings again', run: () => retranscribeNote(n) }] : []),
       { label: 'Export as Markdown', run: () => exportNoteMarkdown(n) },
       { label: 'Print or save as PDF', run: () => { document.body.classList.add('printing'); setTimeout(() => { window.print(); document.body.classList.remove('printing'); }, 50); } },
       { label: 'Duplicate note', run: async () => { const c = { ...n, id: uuid(), pinned: false, source_id: null, created_at: nowISO(), updated_at: nowISO(), _dirty: 0 }; delete c.modified_at; if (isLocked(n)) { c._plain = { title: nTitle(n) + ' copy', body: nBody(n) }; c.cipher = await enc(vaultKey, c._plain); } else c.title = (n.title || 'New Note') + ' copy'; DB.notes.set(c.id, c); markDirty('notes', c); open(c.id); renderSide(); toast('Duplicated'); } },
@@ -1072,7 +1082,7 @@ document.addEventListener('click', async e => {
     saveFromEditor(); return;
   }
   const btn = t.closest('[data-cmd]');
-  if (btn) { e.preventDefault(); if (btn.dataset.cmd === 'attach') { $('filein').value = ''; $('filein').click(); return; } if (btn.dataset.cmd === 'scan') { $('scanin').value = ''; $('scanin').click(); return; } command(btn.dataset.cmd); saveFromEditor(); }
+  if (btn) { e.preventDefault(); if (btn.dataset.cmd === 'attach') { $('filein').value = ''; $('filein').click(); return; } if (btn.dataset.cmd === 'scan') { $('scanin').value = ''; $('scanin').click(); return; } if (btn.dataset.cmd === 'voice') { voiceRecord(); return; } command(btn.dataset.cmd); saveFromEditor(); }
 });
 document.addEventListener('mousedown', e => { if (e.target.closest('.toolbar')) e.preventDefault(); });
 $('filein').addEventListener('change', e => { const fs = [...e.target.files]; if (fs.length) attachFiles(fs); });
@@ -1471,4 +1481,201 @@ async function runExport({ withAtt, withLocked }, progress) {
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 } });
   download(blob, `petes-notes-export-${new Date().toISOString().slice(0, 10)}.zip`);
   progress(1, 'Done');
+}
+
+
+/* ================= voice notes ================= */
+/* Records with the microphone, keeps the audio in the note, and types out what was said.
+   Transcription runs on this device with OpenAI's Whisper speech model, so recordings
+   never leave the device for transcribing. The model downloads once and is then cached. */
+const fmtDur = sec => { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
+async function voiceRecord() {
+  const n = DB.notes.get(ui.current); if (!n || n.deleted_at) return;
+  if ((isLocked(n) || nbLocked(n.notebook_id)) && !vaultKey) return toast('Unlock the locked notebook first');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('This browser can’t record audio');
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+  catch (_) { return toast('The microphone is blocked. Allow it for notes.archimedia.ie in your browser settings.'); }
+  const mime = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 64000 } : undefined);
+  const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  let wake = null; try { wake = await navigator.wakeLock.request('screen'); } catch (_) {}
+  const AC = window.AudioContext || window.webkitAudioContext, ac = new AC();
+  const an = ac.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = .7;
+  ac.createMediaStreamSource(stream).connect(an);
+  const levels = new Uint8Array(an.fftSize);
+  let elapsed = 0, startedAt = performance.now(), paused = false, raf = 0, finished = false;
+  const c = card(`<div class="rec"><div class="rechead"><span class="recdot" id="recdot"></span><span id="recstate">Recording</span></div>
+      <div class="rectime" id="rectime">0:00</div>
+      <canvas class="reclevel" id="reclevel" width="600" height="96" aria-hidden="true"></canvas>
+      <p class="recnote">Your words are typed out into the note when you finish. The first time, the speech model downloads once, so be on Wi-Fi.</p>
+      <div class="recbtns"><button class="gbtn glass press" id="recdiscard">Discard</button><button class="gbtn glass press" id="recpause">Pause</button><button class="primary press" id="recdone">Done</button></div></div>`, { sticky: true });
+  const cv = c.el.querySelector('#reclevel'), g = cv.getContext('2d'), bars = new Array(48).fill(0);
+  const accent = getComputedStyle(root).getPropertyValue('--accent').trim() || '#2f5fd0';
+  let lastBar = 0;
+  const tick = now => {
+    raf = requestAnimationFrame(tick);
+    const t = elapsed + (paused ? 0 : (now - startedAt) / 1000);
+    c.el.querySelector('#rectime').textContent = fmtDur(t);
+    if (now - lastBar < 60) return; lastBar = now;
+    an.getByteTimeDomainData(levels);
+    let peak = 0; for (let i = 0; i < levels.length; i++) peak = Math.max(peak, Math.abs(levels[i] - 128));
+    bars.shift(); bars.push(paused ? 0 : Math.min(1, peak / 70));
+    g.clearRect(0, 0, cv.width, cv.height); g.fillStyle = accent;
+    const w = cv.width / bars.length;
+    bars.forEach((v, i) => { const h = Math.max(6, v * cv.height); g.globalAlpha = .35 + .65 * (i / bars.length); g.beginPath(); g.roundRect ? g.roundRect(i * w + 3, (cv.height - h) / 2, w - 6, h, 4) : g.rect(i * w + 3, (cv.height - h) / 2, w - 6, h); g.fill(); });
+  };
+  raf = requestAnimationFrame(tick);
+  const cleanup = () => { cancelAnimationFrame(raf); stream.getTracks().forEach(t => t.stop()); ac.close().catch(() => {}); if (wake) wake.release().catch(() => {}); };
+  rec.start(1000);
+  c.el.querySelector('#recpause').onclick = e => {
+    if (!paused) { rec.pause(); elapsed += (performance.now() - startedAt) / 1000; paused = true; e.target.textContent = 'Resume'; c.el.querySelector('#recstate').textContent = 'Paused'; c.el.querySelector('#recdot').classList.add('off'); }
+    else { rec.resume(); startedAt = performance.now(); paused = false; e.target.textContent = 'Pause'; c.el.querySelector('#recstate').textContent = 'Recording'; c.el.querySelector('#recdot').classList.remove('off'); }
+  };
+  c.el.querySelector('#recdiscard').onclick = () => {
+    if (elapsed + (paused ? 0 : (performance.now() - startedAt) / 1000) > 5 && !c.el.querySelector('#recdiscard').dataset.sure) { c.el.querySelector('#recdiscard').dataset.sure = 1; c.el.querySelector('#recdiscard').textContent = 'Tap again to discard'; return; }
+    finished = true; rec.onstop = null; try { rec.stop(); } catch (_) {} cleanup(); c.close(); toast('Recording discarded');
+  };
+  c.el.querySelector('#recdone').onclick = () => {
+    if (finished) return; finished = true;
+    if (!paused) elapsed += (performance.now() - startedAt) / 1000;
+    rec.onstop = async () => {
+      cleanup(); c.close();
+      const type = (rec.mimeType || mime || 'audio/webm').split(';')[0];
+      const blob = new Blob(chunks, { type });
+      if (!blob.size) return toast('Nothing was recorded');
+      const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
+      const stamp = new Date();
+      const name = `Voice note ${stamp.toLocaleDateString('en-IE').replace(/\//g, '-')} ${stamp.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' }).replace(':', '.')}.${ext}`;
+      const label = `Voice note · ${fmtDur(elapsed)} · ${stamp.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })}`;
+      const noteId = ui.current;
+      const ids = await attachFiles([new File([blob], name, { type })], { quiet: true, label, after: id => `<div class="transcript pending" data-for="${id}"><p>Transcribing…</p></div>` });
+      if (ids && ids[0]) { toast('Voice note added'); transcribeInto(noteId, ids[0], blob); }
+    };
+    rec.stop();
+  };
+}
+
+/* ---- transcript blocks ---- */
+function editTranscript(noteId, attId, html, pending) {
+  const n = DB.notes.get(noteId); if (!n) return;
+  const block = `<div class="transcript${pending ? ' pending' : ''}" data-for="${attId}">${html}</div>`;
+  const place = rootEl => {
+    const el = rootEl.querySelector(`.transcript[data-for="${attId}"]`);
+    if (el) { el.outerHTML = block; return true; }
+    const au = rootEl.querySelector(`audio[data-att="${attId}"]`);
+    if (au) { (au.closest('.voice') || au).insertAdjacentHTML('afterend', block); return true; }
+    return false;
+  };
+  if (ui.current === noteId && $('body')) {
+    if (pending) { const el = $('body').querySelector(`.transcript[data-for="${attId}"]`); if (el) { el.innerHTML = html; return; } }
+    if (place($('body'))) saveFromEditor();
+    return;
+  }
+  if (pending) return;
+  const div = document.createElement('div'); div.innerHTML = nBody(n);
+  if (!place(div)) return;
+  const body = div.innerHTML;
+  if (isLocked(n)) { if (!vaultKey) return; n._plain = { title: nTitle(n), body }; n.updated_at = nowISO(); enc(vaultKey, n._plain).then(c => { n.cipher = c; n.title = ''; n.body = ''; markDirty('notes', n); }); }
+  else { n.body = body; edited(n); }
+  refreshListSoon();
+}
+function transcriptHTML(text) {
+  const sentences = String(text || '').replace(/\s+/g, ' ').trim().match(/[^.!?]+[.!?]*\s*/g) || [];
+  const paras = []; for (let i = 0; i < sentences.length; i += 4) paras.push(sentences.slice(i, i + 4).join('').trim());
+  return paras.filter(Boolean).map(p => `<p>${esc(p)}</p>`).join('');
+}
+
+/* ---- speech-to-text on this device (Whisper via Transformers.js, in a worker) ---- */
+const WHISPER_WORKER = `
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
+env.allowLocalModels = false;
+let asr = null, device = 'wasm';
+async function load() {
+  if (asr) return asr;
+  try { if (navigator.gpu && await navigator.gpu.requestAdapter()) device = 'webgpu'; } catch (_) {}
+  const progress = p => { if (p.status === 'progress' && p.file && /onnx$/.test(p.file)) self.postMessage({ type: 'load', file: p.file, loaded: p.loaded, total: p.total }); };
+  try {
+    asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', device === 'webgpu'
+      ? { device, dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' }, progress_callback: progress }
+      : { dtype: 'q8', progress_callback: progress });
+  } catch (e) {
+    if (device !== 'webgpu') throw e;
+    device = 'wasm';
+    asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', { dtype: 'q8', progress_callback: progress });
+  }
+  return asr;
+}
+self.onmessage = async ({ data }) => {
+  try {
+    const run = await load();
+    self.postMessage({ type: 'working' });
+    const out = await run(data.audio, { chunk_length_s: 30, stride_length_s: 5, language: 'english', task: 'transcribe' });
+    self.postMessage({ type: 'done', id: data.id, text: Array.isArray(out) ? out.map(o => o.text).join(' ') : out.text });
+  } catch (e) { self.postMessage({ type: 'error', id: data.id, message: String((e && e.message) || e) }); }
+};`;
+let whisper = null;
+const whisperQueue = [];
+let whisperBusy = false;
+function whisperWorker() {
+  if (whisper) return whisper;
+  whisper = new Worker(URL.createObjectURL(new Blob([WHISPER_WORKER], { type: 'text/javascript' })), { type: 'module' });
+  return whisper;
+}
+async function to16k(blob) {
+  const AC = window.AudioContext || window.webkitAudioContext, ac = new AC();
+  try {
+    const decoded = await new Promise((res, rej) => { blob.arrayBuffer().then(b => { const p = ac.decodeAudioData(b, res, rej); if (p && p.then) p.then(res, rej); }, rej); });
+    const len = Math.max(1, Math.ceil(decoded.duration * 16000));
+    const off = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, len, 16000);
+    const src = off.createBufferSource(); src.buffer = decoded; src.connect(off.destination); src.start();
+    return (await off.startRendering()).getChannelData(0);
+  } finally { ac.close().catch(() => {}); }
+}
+function transcribeInto(noteId, attId, blob) {
+  whisperQueue.push({ noteId, attId, blob });
+  editTranscript(noteId, attId, '<p>Waiting to transcribe…</p>', true);
+  pumpWhisper();
+}
+async function pumpWhisper() {
+  if (whisperBusy || !whisperQueue.length) return;
+  whisperBusy = true;
+  const job = whisperQueue.shift();
+  const fail = msg => editTranscript(job.noteId, job.attId, `<p><em>Couldn’t transcribe this recording (${esc(msg)}). Use ••• → Transcribe recordings again to retry.</em></p>`, false);
+  try {
+    editTranscript(job.noteId, job.attId, '<p>Transcribing…</p>', true);
+    const audio = await to16k(job.blob);
+    const w = whisperWorker(), files = {};
+    const text = await new Promise((res, rej) => {
+      w.onmessage = ({ data }) => {
+        if (data.type === 'load') {
+          files[data.file] = [data.loaded || 0, data.total || 0];
+          const l = Object.values(files).reduce((a, f) => a + f[0], 0), t = Object.values(files).reduce((a, f) => a + f[1], 0);
+          editTranscript(job.noteId, job.attId, `<p>Downloading the speech model (first time only)… ${t ? Math.round(l / t * 100) : 0}%</p>`, true);
+        } else if (data.type === 'working') editTranscript(job.noteId, job.attId, '<p>Transcribing…</p>', true);
+        else if (data.type === 'done') res(data.text);
+        else if (data.type === 'error') rej(new Error(data.message));
+      };
+      w.onerror = e => rej(new Error(e.message || 'the speech model couldn’t start'));
+      w.postMessage({ id: job.attId, audio }, [audio.buffer]);
+    });
+    const html = transcriptHTML(text);
+    editTranscript(job.noteId, job.attId, html || '<p><em>No speech was heard in this recording.</em></p>', false);
+    if (html) toast('Voice note transcribed');
+  } catch (err) {
+    console.error(err);
+    const m = String(err.message || err);
+    fail(!navigator.onLine || /fetch|network|Failed to|import|couldn’t start/i.test(m) ? 'the speech model couldn’t be downloaded, so check you’re online' : m.slice(0, 80));
+    if (whisper) { whisper.terminate(); whisper = null; }
+  } finally { whisperBusy = false; pumpWhisper(); }
+}
+async function retranscribeNote(n) {
+  const ids = [...nBody(n).matchAll(/<audio[^>]*data-att="([^"]+)"/g)].map(m => m[1]);
+  if (!ids.length) return;
+  for (const id of ids) {
+    const a = DB.atts.get(id); if (!a) continue;
+    try { const blob = await (await fetch(await attURL(a))).blob(); transcribeInto(n.id, id, blob); }
+    catch (_) { toast('A recording isn’t available offline'); }
+  }
+  toast(ids.length > 1 ? `Transcribing ${ids.length} recordings…` : 'Transcribing…');
 }
