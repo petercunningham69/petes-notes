@@ -1689,37 +1689,56 @@ function transcriptHTML(text) {
 
 /* ---- speech-to-text on this device (Whisper via Transformers.js, in a worker) ---- */
 const WHISPER_WORKER = `
-import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
+import { pipeline, env, WhisperTextStreamer } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
 env.allowLocalModels = false;
+const post = (type, extra) => self.postMessage(Object.assign({ type }, extra || {}));
+post('ready');
 let asr = null, device = 'wasm';
-async function load() {
-  if (asr) return asr;
-  try { if (navigator.gpu && await navigator.gpu.requestAdapter()) device = 'webgpu'; } catch (_) {}
-  const progress = p => { if (p.status === 'progress' && p.file && /onnx$/.test(p.file)) self.postMessage({ type: 'load', file: p.file, loaded: p.loaded, total: p.total }); };
-  try {
-    asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', device === 'webgpu'
-      ? { device, dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' }, progress_callback: progress }
-      : { dtype: 'q8', progress_callback: progress });
-  } catch (e) {
-    if (device !== 'webgpu') throw e;
-    device = 'wasm';
-    asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', { dtype: 'q8', progress_callback: progress });
+const files = {};
+const progress = p => {
+  if (p.status === 'progress' && p.file) {
+    files[p.file] = [p.loaded || 0, p.total || 0];
+    let l = 0, t = 0; for (const k in files) { l += files[k][0]; t += files[k][1]; }
+    post('load', { loaded: l, total: t });
   }
+};
+async function load(forceWasm) {
+  if (asr && !forceWasm) return asr;
+  if (!forceWasm) { try { if (navigator.gpu && await navigator.gpu.requestAdapter()) device = 'webgpu'; } catch (_) {} }
+  else device = 'wasm';
+  post('stage', { text: 'Loading the speech model…', device });
+  if (device === 'webgpu') {
+    try { asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', { device: 'webgpu', dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' }, progress_callback: progress }); return asr; }
+    catch (e) { post('log', { text: 'WebGPU failed, using CPU: ' + ((e && e.message) || e) }); device = 'wasm'; }
+  }
+  asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', { dtype: 'q8', progress_callback: progress });
   return asr;
 }
+async function run(audio, forceWasm) {
+  const m = await load(forceWasm);
+  post('stage', { text: 'Listening to the recording…', device });
+  const streamer = new WhisperTextStreamer(m.tokenizer, { skip_prompt: true, callback_function: text => post('partial', { text }), on_chunk_start: () => post('tick') });
+  const out = await m(audio, { chunk_length_s: 30, stride_length_s: 5, language: 'english', task: 'transcribe', streamer });
+  return Array.isArray(out) ? out.map(o => o.text).join(' ') : out.text;
+}
 self.onmessage = async ({ data }) => {
-  try {
-    const run = await load();
-    self.postMessage({ type: 'working' });
-    const out = await run(data.audio, { chunk_length_s: 30, stride_length_s: 5, language: 'english', task: 'transcribe' });
-    self.postMessage({ type: 'done', id: data.id, text: Array.isArray(out) ? out.map(o => o.text).join(' ') : out.text });
-  } catch (e) { self.postMessage({ type: 'error', id: data.id, message: String((e && e.message) || e) }); }
+  let text;
+  try { text = await run(data.audio.slice(0), false); }
+  catch (e) {
+    if (device === 'webgpu') {
+      post('log', { text: 'WebGPU transcription failed, retrying on CPU: ' + ((e && e.message) || e) });
+      try { asr = null; text = await run(data.audio, true); }
+      catch (e2) { post('error', { id: data.id, message: String((e2 && e2.message) || e2) }); return; }
+    } else { post('error', { id: data.id, message: String((e && e.message) || e) }); return; }
+  }
+  post('done', { id: data.id, text });
 };`;
-let whisper = null;
+let whisper = null, whisperReady = false;
 const whisperQueue = [];
 let whisperBusy = false;
 function whisperWorker() {
   if (whisper) return whisper;
+  whisperReady = false;
   whisper = new Worker(URL.createObjectURL(new Blob([WHISPER_WORKER], { type: 'text/javascript' })), { type: 'module' });
   return whisper;
 }
@@ -1742,31 +1761,49 @@ async function pumpWhisper() {
   if (whisperBusy || !whisperQueue.length) return;
   whisperBusy = true;
   const job = whisperQueue.shift();
-  const fail = msg => editTranscript(job.noteId, job.attId, `<p><em>Couldn’t transcribe this recording (${esc(msg)}). Use ••• → Transcribe recordings again to retry.</em></p>`, false);
+  const t0 = Date.now();
+  let stage = 'Preparing the recording…', partial = '', lastHeard = Date.now(), timer = 0;
+  const show = () => {
+    const secs = Math.round((Date.now() - t0) / 1000);
+    editTranscript(job.noteId, job.attId, `<p>${esc(stage)} <span class="tclock">${fmtDur(secs)}</span></p>${partial ? `<p class="tpartial">${esc(partial)}</p>` : ''}`, true);
+  };
   try {
-    editTranscript(job.noteId, job.attId, '<p>Transcribing…</p>', true);
+    show(); timer = setInterval(show, 1000);
     const audio = await to16k(job.blob);
-    const w = whisperWorker(), files = {};
+    if (audio.length < 16000 * .4) throw new Error('the recording is too short');
+    const w = whisperWorker();
     const text = await new Promise((res, rej) => {
+      // stop waiting if the worker goes quiet: 2 minutes before it starts, 3 minutes while working
+      const watch = setInterval(() => { const quiet = Date.now() - lastHeard; if (quiet > (whisperReady ? 180e3 : 120e3)) { clearInterval(watch); rej(new Error(whisperReady ? 'the speech model stopped responding' : 'the speech tools didn’t load')); } }, 5000);
+      const finish = f => v => { clearInterval(watch); f(v); };
+      const ok = finish(res), bad = finish(rej);
       w.onmessage = ({ data }) => {
-        if (data.type === 'load') {
-          files[data.file] = [data.loaded || 0, data.total || 0];
-          const l = Object.values(files).reduce((a, f) => a + f[0], 0), t = Object.values(files).reduce((a, f) => a + f[1], 0);
-          editTranscript(job.noteId, job.attId, `<p>Downloading the speech model (first time only)… ${t ? Math.round(l / t * 100) : 0}%</p>`, true);
-        } else if (data.type === 'working') editTranscript(job.noteId, job.attId, '<p>Transcribing…</p>', true);
-        else if (data.type === 'done') res(data.text);
-        else if (data.type === 'error') rej(new Error(data.message));
+        lastHeard = Date.now();
+        if (data.type === 'ready') { whisperReady = true; stage = 'Loading the speech tools…'; }
+        else if (data.type === 'stage') { whisperReady = true; stage = data.text + (data.device === 'webgpu' ? '' : ''); console.info('[voice]', data.text, data.device || ''); }
+        else if (data.type === 'load') stage = `Downloading the speech model (first time only)… ${data.total ? Math.round(data.loaded / data.total * 100) : 0}%`;
+        else if (data.type === 'partial') { partial += data.text; }
+        else if (data.type === 'log') console.warn('[voice]', data.text);
+        else if (data.type === 'done') ok(data.text);
+        else if (data.type === 'error') bad(new Error(data.message));
+        show();
       };
-      w.onerror = e => rej(new Error(e.message || 'the speech model couldn’t start'));
-      w.postMessage({ id: job.attId, audio }, [audio.buffer]);
+      w.onerror = e => { e.preventDefault && e.preventDefault(); bad(new Error(e.message || 'the speech tools couldn’t start')); };
+      w.onmessageerror = () => bad(new Error('the recording couldn’t be passed to the speech model'));
+      stage = 'Loading the speech tools…'; show();
+      w.postMessage({ id: job.attId, audio });
     });
+    clearInterval(timer);
     const html = transcriptHTML(text);
     editTranscript(job.noteId, job.attId, html || '<p><em>No speech was heard in this recording.</em></p>', false);
     if (html) toast('Voice note transcribed');
   } catch (err) {
-    console.error(err);
+    clearInterval(timer);
+    console.error('[voice]', err);
     const m = String(err.message || err);
-    fail(!navigator.onLine || /fetch|network|Failed to|import|couldn’t start/i.test(m) ? 'the speech model couldn’t be downloaded, so check you’re online' : m.slice(0, 80));
+    const msg = !navigator.onLine ? 'you seem to be offline' : /Failed to fetch|NetworkError|Load failed|import/i.test(m) ? 'the speech model couldn’t be downloaded' : m.slice(0, 120);
+    editTranscript(job.noteId, job.attId, `<p><em>Couldn’t transcribe this recording: ${esc(msg)}. Use ••• → Transcribe recordings again to retry.</em></p>`, false);
+    toast('Transcription didn’t work');
     if (whisper) { whisper.terminate(); whisper = null; }
   } finally { whisperBusy = false; pumpWhisper(); }
 }

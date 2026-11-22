@@ -457,3 +457,6 @@ ol.setp li{margin-bottom:6px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--wire:#b4c5ff;--wire-alpha:.55}}
 :root[data-theme="dark"]{--wire:#b4c5ff;--wire-alpha:.55}
 #shapesCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.body .transcript .tclock{font-style:normal;font-variant-numeric:tabular-nums;color:var(--faint);margin-left:6px}
+.body .transcript .tpartial{font-style:normal;color:var(--fg);opacity:.75}
+.body .transcript.pending .tpartial::after{display:none}
