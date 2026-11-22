@@ -325,7 +325,11 @@ ambient = (() => {
     { v: '--blob4', cx: .2, cy: .96, r: .36, ax: .58, ay: -.2, T: 72, p: .6, fade: true }
   ];
   let colours = [], raf = 0, last = 0, wire = [90, 120, 200], wireA = .2;
-  const t0 = performance.now() - 9000;
+  // "virtual" clock: only moves while the background is moving, so switching it off freezes the
+  // scene exactly where it is, and switching it back on carries on from there without a jump
+  let vt = 9000, lastFrame = 0, revealAt = 0;
+  // shapes fade in gently once the app has appeared, so they never flash up before the panels
+  const intro = () => { if (!revealAt) return 0; const k = Math.min(1, (performance.now() - revealAt) / 2800); return k * k * (3 - 2 * k); };
 
   /* Wireframe solids that drift and turn slowly in 3D, drawn crisply on their own canvas */
   const sc = document.getElementById('shapesCanvas'), sx = sc.getContext('2d');
@@ -381,8 +385,8 @@ ambient = (() => {
   function drawShapes(now) {
     const W = sc.width, H = sc.height;
     sx.clearRect(0, 0, W, H);
-    if (!movingOn()) return;
-    const t = (now - t0) / 1000, base = Math.min(W, H), [r, g, b] = wire;
+    const k0 = intro(); if (k0 <= 0) return;
+    const t = vt / 1000, base = Math.min(W, H), [r, g, b] = wire;
     sx.lineWidth = 1.3 * dpr; sx.lineCap = 'round';
     for (const f of slots) {
       if (!f.s) spawn(f, t, true);
@@ -404,7 +408,7 @@ ambient = (() => {
       });
       for (const [i, j] of f.s.edges) {
         const depth = (P[i][2] + P[j][2]) / 2;                     // -1 near … +1 far
-        sx.strokeStyle = `rgba(${r},${g},${b},${(wireA * ease * (1 - .5 * (depth + 1) / 2)).toFixed(3)})`;
+        sx.strokeStyle = `rgba(${r},${g},${b},${(wireA * k0 * ease * (1 - .5 * (depth + 1) / 2)).toFixed(3)})`;
         sx.beginPath(); sx.moveTo(P[i][0], P[i][1]); sx.lineTo(P[j][0], P[j][1]); sx.stroke();
       }
     }
@@ -416,7 +420,7 @@ ambient = (() => {
   }
   function size() { const W = 240, H = Math.max(60, Math.round(W * innerHeight / Math.max(1, innerWidth))); if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; } }
   function draw(now) {
-    const W = cv.width, H = cv.height, M = Math.max(W, H), t = (now - t0) / 1000;
+    const W = cv.width, H = cv.height, M = Math.max(W, H), t = vt / 1000;
     ctx.clearRect(0, 0, W, H);
     BLOBS.forEach((b, i) => {
       const ph = 2 * Math.PI * t / b.T + b.p;
@@ -431,24 +435,27 @@ ambient = (() => {
       ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
     });
   }
-  const running = () => movingOn() && !document.hidden && document.hasFocus();
+  const moving = () => movingOn() && !document.hidden && document.hasFocus();
+  const running = () => moving() || (revealAt && intro() < 1 && !document.hidden);
   function loop(now) {
     raf = 0;
-    if (!running()) return;
-    if (now - last >= 66) { last = now; draw(now); drawShapes(now); }
+    if (!running()) { lastFrame = 0; draw(); drawShapes(); return; }
+    if (moving() && lastFrame) vt += Math.min(now - lastFrame, 100);
+    lastFrame = now;
+    if (now - last >= 66) { last = now; draw(); drawShapes(); }
     raf = requestAnimationFrame(loop);
   }
   function update() {
     if (!colours.length) readColours();
     size();
     if (running()) { if (!raf) raf = requestAnimationFrame(loop); }
-    else { cancelAnimationFrame(raf); raf = 0; draw(performance.now()); drawShapes(performance.now()); }
+    else { cancelAnimationFrame(raf); raf = 0; lastFrame = 0; draw(); drawShapes(); }
   }
   sizeShapes();
-  addEventListener('resize', () => { size(); sizeShapes(); draw(performance.now()); drawShapes(performance.now()); });
+  addEventListener('resize', () => { size(); sizeShapes(); draw(); drawShapes(); });
   addEventListener('focus', update); addEventListener('blur', update);
   document.addEventListener('visibilitychange', update);
-  return { update, recolour() { readColours(); draw(performance.now()); drawShapes(performance.now()); } };
+  return { update, reveal() { if (!revealAt) { revealAt = performance.now(); update(); } }, recolour() { readColours(); draw(); drawShapes(); } };
 })();
 applyMoving();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
@@ -1297,6 +1304,7 @@ async function start(user) {
   const [nbs, ns, as] = await Promise.all([idb.all('notebooks'), idb.all('notes'), idb.all('atts')]).catch(() => [[], [], []]);
   nbs.forEach(r => DB.notebooks.set(r.id, r)); ns.forEach(r => DB.notes.set(r.id, r)); as.forEach(r => DB.atts.set(r.id, r));
   gate.hidden = true; gate.innerHTML = ''; app.hidden = false;
+  requestAnimationFrame(() => ambient.reveal());
   buildSide(); buildList();
   if (!narrow()) { const first = visible()[0]; if (first) ui.current = first.id; }
   renderSide(); renderList({ enter: true }); renderEditor(); applyNav(0); applyDrawer(0);
