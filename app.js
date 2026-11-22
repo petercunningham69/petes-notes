@@ -346,14 +346,32 @@ ambient = (() => {
   const OCTA = solid(perms(1, 0, 0).flatMap(v => pm(v)));
   const CUBE = solid(pm([1, 1, 1]));
   const TETRA = solid([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]);
-  // where each shape floats (fractions of the window), how far it wanders, its size and spin (radians a second)
-  const FLOAT = [
-    { s: ICOSA, cx: .14, cy: .3, ax: .06, ay: .1, T: 70, size: .17, rx: .05, ry: .08, rz: .02, p: 0 },
-    { s: CUBE, cx: .5, cy: .78, ax: .08, ay: .06, T: 84, size: .12, rx: .07, ry: .04, rz: .05, p: 1.3 },
-    { s: DODECA, cx: .84, cy: .26, ax: .05, ay: .09, T: 96, size: .19, rx: .03, ry: .06, rz: .03, p: 2.4 },
-    { s: OCTA, cx: .38, cy: .2, ax: .07, ay: .05, T: 77, size: .09, rx: .09, ry: .05, rz: .04, p: 3.6 },
-    { s: TETRA, cx: .78, cy: .8, ax: .06, ay: .07, T: 66, size: .1, rx: .06, ry: .09, rz: .03, p: 4.7 }
-  ];
+  // Each shape appears at a random spot, drifts and turns for a minute or so, fades out,
+  // then a new random shape fades in somewhere else, so the background never repeats
+  const SOLIDS = [ICOSA, DODECA, OCTA, CUBE, TETRA];
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const slots = Array.from({ length: 5 }, () => ({}));
+  const FADE = 7;
+  function spawn(slot, t, initial) {
+    const others = slots.filter(o => o !== slot && o.s);
+    const free = SOLIDS.filter(sd => !others.some(o => o.s === sd));
+    slot.s = (free.length ? free : SOLIDS)[Math.floor(Math.random() * (free.length || SOLIDS.length))];
+    let best = null, bestD = -1;
+    for (let k = 0; k < 40; k++) {
+      const cx = rnd(.06, .94), cy = rnd(.08, .92);
+      const d = others.length ? Math.min(...others.map(o => Math.hypot((o.cx + o.vx * (t - o.born) - cx) * 1.6, o.cy + o.vy * (t - o.born) - cy))) : 1;
+      if (d > bestD) { best = [cx, cy]; bestD = d; }
+      if (d > .38) break;
+    }
+    [slot.cx, slot.cy] = best;
+    const dir = rnd(0, 2 * Math.PI), speed = rnd(.0008, .0018);
+    slot.vx = Math.cos(dir) * speed; slot.vy = Math.sin(dir) * speed;
+    slot.size = rnd(.07, .17);
+    slot.rx = rnd(.03, .1) * (Math.random() < .5 ? -1 : 1); slot.ry = rnd(.03, .1) * (Math.random() < .5 ? -1 : 1); slot.rz = rnd(.01, .05);
+    slot.p = rnd(0, 2 * Math.PI);
+    slot.life = rnd(50, 85);
+    slot.born = initial ? t - rnd(FADE, slot.life * .7) : t;
+  }
   let dpr = 1;
   function sizeShapes() {
     dpr = Math.min(1.5, window.devicePixelRatio || 1);
@@ -365,11 +383,16 @@ ambient = (() => {
     sx.clearRect(0, 0, W, H);
     if (!movingOn()) return;
     const t = (now - t0) / 1000, base = Math.min(W, H), [r, g, b] = wire;
-    sx.lineWidth = 1 * dpr; sx.lineCap = 'round';
-    for (const f of FLOAT) {
-      const ph = 2 * Math.PI * t / f.T + f.p;
-      const ox = (f.cx + f.ax * Math.sin(ph)) * W, oy = (f.cy + f.ay * Math.sin(ph * .7 + 1.1)) * H;
-      const R = f.size * base * (1 + .06 * Math.sin(ph * 1.3));
+    sx.lineWidth = 1.3 * dpr; sx.lineCap = 'round';
+    for (const f of slots) {
+      if (!f.s) spawn(f, t, true);
+      let age = t - f.born;
+      if (age > f.life || age < 0) { spawn(f, t, false); age = 0; }
+      const fade = Math.max(0, Math.min(1, age / FADE, (f.life - age) / FADE));
+      const ease = fade * fade * (3 - 2 * fade);
+      const ph = f.p + age * .09;
+      const ox = (f.cx + f.vx * age + .012 * Math.sin(ph)) * W, oy = (f.cy + f.vy * age + .012 * Math.sin(ph * .8 + 1.1)) * H;
+      const R = f.size * base * (.92 + .08 * ease);
       const a1 = t * f.rx + f.p, a2 = t * f.ry + f.p * .5, a3 = t * f.rz;
       const c1 = Math.cos(a1), s1 = Math.sin(a1), c2 = Math.cos(a2), s2 = Math.sin(a2), c3 = Math.cos(a3), s3 = Math.sin(a3);
       const P = f.s.vs.map(([x, y, z]) => {
@@ -381,7 +404,7 @@ ambient = (() => {
       });
       for (const [i, j] of f.s.edges) {
         const depth = (P[i][2] + P[j][2]) / 2;                     // -1 near … +1 far
-        sx.strokeStyle = `rgba(${r},${g},${b},${(wireA * (.95 - .55 * (depth + 1) / 2)).toFixed(3)})`;
+        sx.strokeStyle = `rgba(${r},${g},${b},${(wireA * ease * (1 - .5 * (depth + 1) / 2)).toFixed(3)})`;
         sx.beginPath(); sx.moveTo(P[i][0], P[i][1]); sx.lineTo(P[j][0], P[j][1]); sx.stroke();
       }
     }
