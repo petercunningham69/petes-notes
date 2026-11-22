@@ -451,3 +451,9 @@ ol.setp li{margin-bottom:6px}
 .body .transcript p{margin:0 0 .55em}
 .body .transcript.pending{color:var(--muted);font-style:italic}
 .body .transcript.pending p::after{content:"";display:inline-block;width:6px;height:6px;margin-left:8px;border-radius:50%;background:var(--accent);vertical-align:middle;animation:pulse 1.2s ease-in-out infinite}
+
+/* wireframe shapes over the drifting light (only drawn while Moving background is on) */
+:root{--wire:#3d63c9;--wire-alpha:.42}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--wire:#a9bcff;--wire-alpha:.36}}
+:root[data-theme="dark"]{--wire:#a9bcff;--wire-alpha:.36}
+#shapesCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}

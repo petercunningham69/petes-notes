@@ -324,10 +324,73 @@ ambient = (() => {
     { v: '--blob3', cx: .92, cy: .02, r: .38, ax: -.46, ay: .28, T: 54, p: 3.1 },
     { v: '--blob4', cx: .2, cy: .96, r: .36, ax: .58, ay: -.2, T: 72, p: .6, fade: true }
   ];
-  let colours = [], raf = 0, last = 0;
+  let colours = [], raf = 0, last = 0, wire = [90, 120, 200], wireA = .2;
   const t0 = performance.now() - 9000;
+
+  /* Wireframe solids that drift and turn slowly in 3D, drawn crisply on their own canvas */
+  const sc = document.getElementById('shapesCanvas'), sx = sc.getContext('2d');
+  const PHI = (1 + Math.sqrt(5)) / 2;
+  const solid = verts => {
+    const m = Math.max(...verts.map(v => Math.hypot(v[0], v[1], v[2])));
+    const vs = verts.map(v => v.map(c => c / m)), edges = [];
+    let min = Infinity;
+    for (let i = 0; i < vs.length; i++) for (let j = i + 1; j < vs.length; j++) min = Math.min(min, Math.hypot(vs[i][0] - vs[j][0], vs[i][1] - vs[j][1], vs[i][2] - vs[j][2]));
+    for (let i = 0; i < vs.length; i++) for (let j = i + 1; j < vs.length; j++) if (Math.hypot(vs[i][0] - vs[j][0], vs[i][1] - vs[j][1], vs[i][2] - vs[j][2]) < min * 1.01) edges.push([i, j]);
+    return { vs, edges };
+  };
+  const perms = (a, b, c) => [[a, b, c], [b, c, a], [c, a, b]];
+  const signs = (x, y, z) => { const out = []; for (const sx_ of x ? [1, -1] : [1]) for (const sy of y ? [1, -1] : [1]) for (const sz of z ? [1, -1] : [1]) out.push([sx_, sy, sz]); return out; };
+  const pm = (v, f) => signs(v[0] !== 0, v[1] !== 0, v[2] !== 0).map(s => [v[0] * s[0], v[1] * s[1], v[2] * s[2]]);
+  const ICOSA = solid(perms(0, 1, PHI).flatMap(v => pm(v)));
+  const DODECA = solid([...pm([1, 1, 1]), ...perms(0, 1 / PHI, PHI).flatMap(v => pm(v))]);
+  const OCTA = solid(perms(1, 0, 0).flatMap(v => pm(v)));
+  const CUBE = solid(pm([1, 1, 1]));
+  const TETRA = solid([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]);
+  // where each shape floats (fractions of the window), how far it wanders, its size and spin (radians a second)
+  const FLOAT = [
+    { s: ICOSA, cx: .14, cy: .3, ax: .06, ay: .1, T: 70, size: .17, rx: .05, ry: .08, rz: .02, p: 0 },
+    { s: CUBE, cx: .5, cy: .78, ax: .08, ay: .06, T: 84, size: .12, rx: .07, ry: .04, rz: .05, p: 1.3 },
+    { s: DODECA, cx: .84, cy: .26, ax: .05, ay: .09, T: 96, size: .19, rx: .03, ry: .06, rz: .03, p: 2.4 },
+    { s: OCTA, cx: .38, cy: .2, ax: .07, ay: .05, T: 77, size: .09, rx: .09, ry: .05, rz: .04, p: 3.6 },
+    { s: TETRA, cx: .78, cy: .8, ax: .06, ay: .07, T: 66, size: .1, rx: .06, ry: .09, rz: .03, p: 4.7 }
+  ];
+  let dpr = 1;
+  function sizeShapes() {
+    dpr = Math.min(1.5, window.devicePixelRatio || 1);
+    const W = Math.round(innerWidth * dpr), H = Math.round(innerHeight * dpr);
+    if (sc.width !== W || sc.height !== H) { sc.width = W; sc.height = H; }
+  }
+  function drawShapes(now) {
+    const W = sc.width, H = sc.height;
+    sx.clearRect(0, 0, W, H);
+    if (!movingOn()) return;
+    const t = (now - t0) / 1000, base = Math.min(W, H), [r, g, b] = wire;
+    sx.lineWidth = 1 * dpr; sx.lineCap = 'round';
+    for (const f of FLOAT) {
+      const ph = 2 * Math.PI * t / f.T + f.p;
+      const ox = (f.cx + f.ax * Math.sin(ph)) * W, oy = (f.cy + f.ay * Math.sin(ph * .7 + 1.1)) * H;
+      const R = f.size * base * (1 + .06 * Math.sin(ph * 1.3));
+      const a1 = t * f.rx + f.p, a2 = t * f.ry + f.p * .5, a3 = t * f.rz;
+      const c1 = Math.cos(a1), s1 = Math.sin(a1), c2 = Math.cos(a2), s2 = Math.sin(a2), c3 = Math.cos(a3), s3 = Math.sin(a3);
+      const P = f.s.vs.map(([x, y, z]) => {
+        let y1 = y * c1 - z * s1, z1 = y * s1 + z * c1;            // turn about x
+        let x2 = x * c2 + z1 * s2, z2 = -x * s2 + z1 * c2;         // about y
+        let x3 = x2 * c3 - y1 * s3, y3 = x2 * s3 + y1 * c3;        // about z
+        const k = 3.2 / (3.2 + z2);                                // gentle perspective
+        return [ox + x3 * R * k, oy + y3 * R * k, z2];
+      });
+      for (const [i, j] of f.s.edges) {
+        const depth = (P[i][2] + P[j][2]) / 2;                     // -1 near … +1 far
+        sx.strokeStyle = `rgba(${r},${g},${b},${(wireA * (.95 - .55 * (depth + 1) / 2)).toFixed(3)})`;
+        sx.beginPath(); sx.moveTo(P[i][0], P[i][1]); sx.lineTo(P[j][0], P[j][1]); sx.stroke();
+      }
+    }
+  }
   const hex = h => { h = h.trim().replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
-  function readColours() { const cs = getComputedStyle(root); colours = BLOBS.map(b => hex(cs.getPropertyValue(b.v) || '#808080')); }
+  function readColours() {
+    const cs = getComputedStyle(root); colours = BLOBS.map(b => hex(cs.getPropertyValue(b.v) || '#808080'));
+    wire = hex(cs.getPropertyValue('--wire') || '#5a78c8'); wireA = parseFloat(cs.getPropertyValue('--wire-alpha')) || .2;
+  }
   function size() { const W = 240, H = Math.max(60, Math.round(W * innerHeight / Math.max(1, innerWidth))); if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; } }
   function draw(now) {
     const W = cv.width, H = cv.height, M = Math.max(W, H), t = (now - t0) / 1000;
@@ -349,19 +412,20 @@ ambient = (() => {
   function loop(now) {
     raf = 0;
     if (!running()) return;
-    if (now - last >= 80) { last = now; draw(now); }
+    if (now - last >= 66) { last = now; draw(now); drawShapes(now); }
     raf = requestAnimationFrame(loop);
   }
   function update() {
     if (!colours.length) readColours();
     size();
     if (running()) { if (!raf) raf = requestAnimationFrame(loop); }
-    else { cancelAnimationFrame(raf); raf = 0; draw(performance.now()); }
+    else { cancelAnimationFrame(raf); raf = 0; draw(performance.now()); drawShapes(performance.now()); }
   }
-  addEventListener('resize', () => { size(); draw(performance.now()); });
+  sizeShapes();
+  addEventListener('resize', () => { size(); sizeShapes(); draw(performance.now()); drawShapes(performance.now()); });
   addEventListener('focus', update); addEventListener('blur', update);
   document.addEventListener('visibilitychange', update);
-  return { update, recolour() { readColours(); draw(performance.now()); } };
+  return { update, recolour() { readColours(); draw(performance.now()); drawShapes(performance.now()); } };
 })();
 applyMoving();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
