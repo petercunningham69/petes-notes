@@ -83,6 +83,16 @@ const idb = (() => {
 })();
 
 const DB = { notebooks: new Map(), notes: new Map(), atts: new Map() };
+// Attachment bytes are kept as plain data rather than Blob/File objects: Safari on iPhone can
+// hand back an empty or unreadable Blob from IndexedDB after the app restarts.
+async function putBlob(id, blob) { const buf = await blob.arrayBuffer(); await idb.put('blobs', id, { buf, type: blob.type || 'application/octet-stream' }); }
+async function getBlob(id) {
+  const v = await idb.get('blobs', id).catch(() => null);
+  if (!v) return null;
+  if (v.buf) return new Blob([v.buf], { type: v.type });
+  if (v instanceof Blob) { try { const buf = await v.arrayBuffer(); return buf.byteLength ? new Blob([buf], { type: v.type }) : null; } catch (_) { return null; } }
+  return null;
+}
 let uid = null;
 const persistQ = { notebooks: new Map(), notes: new Map(), atts: new Map() };
 let persistTimer;
@@ -163,17 +173,28 @@ function setSync(state, msg = '') { syncStatus = { state, msg }; const el = $('s
 function syncHTML() {
   const s = syncStatus.state;
   const dirty = [...DB.notes.values()].filter(n => n._dirty).length;
-  const txt = s === 'busy' ? 'Syncing…' : s === 'off' ? `Offline · ${dirty ? dirty + ' change' + (dirty > 1 ? 's' : '') + ' waiting' : 'everything saved here'}` : s === 'err' ? 'Sync problem · ' + esc(syncStatus.msg) : meta.lastSync ? 'Synced ' + when(meta.lastSync) : 'Not synced yet';
+  const waiting = [...DB.atts.values()].filter(a => a._pendingUpload).length;
+  const txt = s === 'idle' && waiting && meta.lastSync ? `Synced ${when(meta.lastSync)} · ${waiting} attachment${waiting > 1 ? 's' : ''} waiting` : s === 'busy' ? 'Syncing…' : s === 'off' ? `Offline · ${dirty ? dirty + ' change' + (dirty > 1 ? 's' : '') + ' waiting' : 'everything saved here'}` : s === 'err' ? 'Sync problem · ' + esc(syncStatus.msg) : meta.lastSync ? 'Synced ' + when(meta.lastSync) : 'Not synced yet';
   return `<div class="sync ${s === 'busy' ? 'busy' : s === 'off' ? 'off' : s === 'err' ? 'err' : ''}" id="syncline"><i></i>${txt}</div>`;
 }
+// Upload attachments added on this device. A problem with one never stops notes syncing.
 async function uploadPending() {
+  const lost = [];
   for (const a of DB.atts.values()) {
     if (!a._pendingUpload) continue;
-    const blob = await idb.get('blobs', a.id).catch(() => null);
-    if (!blob) { a._pendingUpload = 0; continue; }
-    const { error } = await sb.storage.from('attachments').upload(a.path, blob, { upsert: true, contentType: a.mime || undefined });
-    if (error) throw error;
-    a._pendingUpload = 0; markDirty('atts', a);
+    const blob = await getBlob(a.id);
+    if (!blob || !blob.size) {
+      a._tries = (a._tries || 0) + 1;
+      if (a._tries >= 3) { a._pendingUpload = 0; a._lost = 1; lost.push(a); }
+      persist('atts', a); continue;
+    }
+    const { error } = await sb.storage.from('attachments').upload(a.path, blob, { upsert: true, contentType: a.mime || blob.type || undefined });
+    if (error) { console.warn('[sync] attachment upload failed', a.filename, error.message); a._tries = (a._tries || 0) + 1; persist('atts', a); continue; }
+    a._pendingUpload = 0; a._tries = 0; markDirty('atts', a);
+  }
+  if (lost.length) {
+    const n = DB.notes.get(lost[0].note_id);
+    toast(`${lost.length > 1 ? lost.length + ' attachments' : 'An attachment'} in “${n ? (nTitle(n) || 'New Note') : 'a note'}” couldn’t be saved from this device`);
   }
 }
 async function sync() {
@@ -183,8 +204,8 @@ async function sync() {
   syncing = true; setSync('busy');
   let changed = false;
   try {
-    await uploadPending();
     for (const [t, k] of TABLES) {
+      if (t === 'attachments') await uploadPending();
       const dirty = [...DB[k].values()].filter(r => r._dirty && !r._pendingUpload);
       for (let i = 0; i < dirty.length; i += 150) {
         const batch = dirty.slice(i, i + 150), vers = batch.map(r => r._v);
@@ -703,11 +724,12 @@ function serializeBody() {
 const blobURLs = new Map();
 async function attURL(a) {
   if (blobURLs.has(a.id)) return blobURLs.get(a.id);
-  let blob = await idb.get('blobs', a.id).catch(() => null);
+  let blob = await getBlob(a.id);
   if (!blob) {
+    if (a._lost || a._pendingUpload) throw new Error('not available');
     const { data, error } = await sb.storage.from('attachments').download(a.path);
     if (error) throw error;
-    blob = data; idb.put('blobs', a.id, blob).catch(() => {});
+    blob = data; putBlob(a.id, blob).catch(() => {});
   }
   if (a.path.endsWith('.enc')) { if (!vaultKey) throw new Error('locked'); blob = await decBlob(blob, a.mime); }
   const url = URL.createObjectURL(blob); blobURLs.set(a.id, url); return url;
@@ -734,7 +756,7 @@ async function attachFiles(files, { quiet = false, after = '', label = '' } = {}
     a.path = `${uid}/${a.id}/${safeName(a.filename)}`;
     let data = f;
     if (isLocked(n) || nbLocked(n.notebook_id)) { if (!vaultKey) { toast('Unlock the locked notebook first'); return ids; } data = await encBlob(f); a.path += '.enc'; }
-    await idb.put('blobs', a.id, data);
+    await putBlob(a.id, data);
     a._pendingUpload = 1; DB.atts.set(a.id, a); persist('atts', a);
     const extra = typeof after === 'function' ? after(a.id) : after;
     ids.push(a.id);
@@ -1060,7 +1082,7 @@ async function runImport(zip, m, progress) {
     rec.path = `${uid}/${rec.id}/${safeName(rec.filename)}` + (lockedOwner ? '.enc' : '');
     const { error } = await sb.storage.from('attachments').upload(rec.path, blob, { upsert: true, contentType: rec.mime || undefined });
     if (error) throw error;
-    idb.put('blobs', rec.id, blob).catch(() => {});
+    putBlob(rec.id, blob).catch(() => {});
     DB.atts.set(rec.id, rec); rec._dirty = 1; rec._v = 1; persist('atts', rec);
     progress(++done / total, `Uploading attachments… ${done - fresh.length} of ${upAtts.length}`);
   }
